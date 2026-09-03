@@ -11,5 +11,8 @@
 | Scheduling/job state | PostgreSQL + worker state |
 | UI preferences | Application database |
 | Network/contract configuration | `packages/config` + validated environment variables |
+| JavaScript dependency graph | Root `pnpm-lock.yaml` |
+
+The repository uses pnpm `10.15.1` as declared by the root `package.json` and a single workspace lockfile at the repository root. CI installs from the repository root with the frozen lockfile. The lockfile must be generated from the actual workspace manifests and committed; CI must not synthesize or bypass it.
 
 Off-chain data must never silently override authoritative on-chain financial state.
