@@ -24,6 +24,22 @@ jobs:
 
   api:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: paychad
+          POSTGRES_PASSWORD: paychad
+          POSTGRES_DB: paychad_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U paychad -d paychad_test"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=10
+    env:
+      DATABASE_URL: postgres://paychad:paychad@localhost:5432/paychad_test
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -37,6 +53,9 @@ jobs:
       - run: pnpm --filter @paychad/api typecheck
       - run: pnpm --filter @paychad/api build
       - run: pnpm --filter @paychad/api test
+      - run: pnpm --filter @paychad/api db:migrate
+      - run: pnpm --filter @paychad/api db:migrate
+      - run: pnpm --filter @paychad/api db:validate
 
   contracts:
     runs-on: ubuntu-latest
