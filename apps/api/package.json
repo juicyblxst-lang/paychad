@@ -1,7 +1,7 @@
 {
   "name": "@paychad/api",
   "private": true,
-  "scripts": {"dev":"tsx watch src/index.ts","build":"tsc","start":"node dist/index.js","typecheck":"tsc --noEmit","lint":"eslint .","test":"vitest run"},
-  "dependencies": {"@fastify/cors":"^11.0.0","fastify":"^5.4.0","viem":"^2.37.0"},
+  "scripts": {"dev":"tsx watch src/index.ts","build":"tsc","start":"node dist/index.js","typecheck":"tsc --noEmit","lint":"eslint .","test":"vitest run","db:migrate":"tsx src/db/migrate.ts","db:validate":"tsx src/db/validate-schema.ts"},
+  "dependencies": {"@fastify/cors":"^11.0.0","fastify":"^5.4.0","postgres":"3.4.8","viem":"^2.37.0"},
   "devDependencies": {"@types/node":"^24.0.0","eslint":"^9.0.0","tsx":"^4.20.0","typescript":"^5.9.0","vitest":"^3.2.0"}
 }
