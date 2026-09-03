@@ -1,6 +1,6 @@
 import { encodeAbiParameters, encodeEventTopics, type AbiParameter, type Address, type Hex } from "viem";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createDatabase, getDatabaseUrl, type Database } from "../db/database";
+import { createDatabase, type Database } from "../db/database";
 import { decodePayChadEvent, payChadPayrollEvents, type PayChadDomainEvent, type RawBlockchainLog } from "./events";
 import { persistPayChadEvent, persistPayChadEvents } from "./persist";
 
