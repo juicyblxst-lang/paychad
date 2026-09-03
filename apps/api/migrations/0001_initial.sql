@@ -47,6 +47,7 @@ CREATE TABLE indexed_events (
     block_hash TEXT NOT NULL CHECK (block_hash ~ '^0x[0-9a-fA-F]{64}$'),
     contract_address TEXT NOT NULL CHECK (contract_address ~ '^0x[0-9a-fA-F]{40}$'),
     event_name TEXT NOT NULL,
+    event_data JSONB NOT NULL,
     observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (chain_id, block_number, transaction_hash, log_index),
     CONSTRAINT indexed_events_transaction_fk
