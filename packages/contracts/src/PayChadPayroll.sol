@@ -11,6 +11,7 @@ contract PayChadPayroll {
     error CompanyNotFound();
     error EmployeeNotFound();
     error EmployeeAlreadyExists();
+    error CompanyAlreadyExists();
     error InvalidAddress();
     error InvalidSalary();
     error InactiveEmployee();
@@ -38,6 +39,7 @@ contract PayChadPayroll {
     uint256 public nextCompanyId = 1;
 
     mapping(uint256 => Company) private companies;
+    mapping(address => uint256) public companyIdByOwner;
     mapping(uint256 => mapping(uint256 => Employee)) private employees;
     mapping(uint256 => uint256[]) private employeeIds;
     mapping(uint256 => mapping(uint256 => uint64)) public lastPaidRun;
@@ -72,7 +74,9 @@ contract PayChadPayroll {
     }
 
     function registerCompany(string calldata name) external returns (uint256 companyId) {
+        if (companyIdByOwner[msg.sender] != 0) revert CompanyAlreadyExists();
         companyId = nextCompanyId++;
+        companyIdByOwner[msg.sender] = companyId;
         companies[companyId] = Company({
             owner: msg.sender,
             name: name,
@@ -172,5 +176,9 @@ contract PayChadPayroll {
     function getEmployeeIds(uint256 companyId) external view returns (uint256[] memory) {
         if (companies[companyId].owner == address(0)) revert CompanyNotFound();
         return employeeIds[companyId];
+    }
+
+    function getCompanyForOwner(address owner) external view returns (uint256 companyId) {
+        companyId = companyIdByOwner[owner];
     }
 }
