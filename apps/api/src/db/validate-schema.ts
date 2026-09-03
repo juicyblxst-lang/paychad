@@ -8,13 +8,24 @@ const CONTRACT = "0x3333333333333333333333333333333333333333";
 const TX = "0x" + "44".repeat(32);
 const BLOCK = "0x" + "55".repeat(32);
 const REQUEST_HASH = "aa".repeat(32);
+const CONSTRAINT_SAVEPOINT = "paychad_constraint_test";
 
-async function expectConstraintFailure(operation: () => Promise<unknown>, label: string): Promise<void> {
+async function expectConstraintFailure(
+  db: Database,
+  operation: () => Promise<unknown>,
+  label: string,
+): Promise<void> {
+  await db.unsafe(`SAVEPOINT ${CONSTRAINT_SAVEPOINT}`);
   try {
     await operation();
   } catch {
+    await db.unsafe(`ROLLBACK TO SAVEPOINT ${CONSTRAINT_SAVEPOINT}`);
+    await db.unsafe(`RELEASE SAVEPOINT ${CONSTRAINT_SAVEPOINT}`);
     return;
   }
+
+  await db.unsafe(`ROLLBACK TO SAVEPOINT ${CONSTRAINT_SAVEPOINT}`);
+  await db.unsafe(`RELEASE SAVEPOINT ${CONSTRAINT_SAVEPOINT}`);
   throw new Error(`Expected constraint failure: ${label}`);
 }
 
@@ -36,6 +47,7 @@ export async function validateSchema(): Promise<void> {
         VALUES (143, 1, ${OWNER}, 'Schema Test', now())
       `;
       await expectConstraintFailure(
+        db,
         () => db`
           INSERT INTO companies (chain_id, company_id, owner_address, name, created_at)
           VALUES (143, 2, ${OWNER}, 'Duplicate Owner', now())
@@ -49,6 +61,7 @@ export async function validateSchema(): Promise<void> {
         ) VALUES (143, 1, 1, ${EMPLOYEE}, ${MAX_UINT256}, true, now(), now())
       `;
       await expectConstraintFailure(
+        db,
         () => db`
           INSERT INTO employees (
             chain_id, company_id, employee_id, wallet_address, salary_base_units, active, created_at, updated_at
@@ -69,6 +82,7 @@ export async function validateSchema(): Promise<void> {
         ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment')
       `;
       await expectConstraintFailure(
+        db,
         () => db`
           INSERT INTO indexed_events (
             chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name
@@ -88,6 +102,7 @@ export async function validateSchema(): Promise<void> {
         ) VALUES (143, 1, 1, 1, ${EMPLOYEE}, ${MAX_UINT256}, 100, ${TX}, 0, now())
       `;
       await expectConstraintFailure(
+        db,
         () => db`
           INSERT INTO payroll_payments (
             chain_id, company_id, run_id, employee_id, recipient_address, amount_base_units,
@@ -102,6 +117,7 @@ export async function validateSchema(): Promise<void> {
         VALUES ('schema-test-key', 'schema-test', ${REQUEST_HASH}, 'pending')
       `;
       await expectConstraintFailure(
+        db,
         () => db`
           INSERT INTO idempotency_keys (idempotency_key, operation, request_hash, status)
           VALUES ('schema-test-key', 'schema-test', ${REQUEST_HASH}, 'pending')
@@ -110,6 +126,7 @@ export async function validateSchema(): Promise<void> {
       );
 
       await expectConstraintFailure(
+        db,
         () => db`
           INSERT INTO payroll_runs (chain_id, company_id, run_id, created_at)
           VALUES (143, 999, 2, now())
