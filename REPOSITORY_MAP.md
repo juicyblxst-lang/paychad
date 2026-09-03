@@ -1,28 +1,21 @@
 # PayChad Repository Map
 
-## Baseline
+## Current state
 - Repository: `juicyblxst-lang/paychad`
 - Default branch: `main`
-- Initial baseline commit: `76f59c53f575312b0d330f3f7a30054241e4bfe9`
-- Starting state: empty repository; no pre-existing application code, branches, commits, PRs, CI, contracts, frontend, backend, or database schema were present.
+- Current Phase 1 baseline: PostgreSQL persistence foundation added; event indexer, business API and jobs are not yet implemented.
 
-## Target structure
+## Implemented structure
 ```text
 apps/
-  web/        Next.js frontend
-  api/        PayChad API, indexer and jobs
+  web/        Next.js frontend and wallet/contract interaction UI
+  api/        Fastify API, database connection, migration runner and schema validation
+    migrations/  forward-only PostgreSQL migrations
 packages/
   contracts/  Foundry Solidity contracts
-  config/     shared chain/environment configuration
-  domain/     shared TypeScript domain types
-  ui/         shared UI primitives where justified
-infra/
-  docker/     local infrastructure helpers
-  render/     Render service configuration
-  vercel/     Vercel deployment notes/configuration
+  config/     shared Monad network/environment configuration
 .github/
-  workflows/
-docs/
+  workflows/  CI including isolated PostgreSQL schema validation
 ```
 
-This map is a target, not evidence that every component has already been implemented. Update it whenever the repository materially changes.
+The repository map describes actual implemented paths, not aspirational directories. Update it when a new subsystem is actually added.
