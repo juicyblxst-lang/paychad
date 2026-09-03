@@ -42,7 +42,7 @@ contract PayChadPayroll {
     mapping(address => uint256) public companyIdByOwner;
     mapping(uint256 => mapping(uint256 => Employee)) private employees;
     mapping(uint256 => uint256[]) private employeeIds;
-    mapping(uint256 => mapping(uint256 => uint64)) public lastPaidRun;
+    mapping(uint256 => mapping(uint256 => uint256)) public lastPaidRun;
 
     uint256 private _entered;
 
@@ -139,10 +139,10 @@ contract PayChadPayroll {
             Employee storage employee = employees[companyId][employeeId];
             if (employee.wallet == address(0)) revert EmployeeNotFound();
             if (!employee.active) revert InactiveEmployee();
-            if (lastPaidRun[companyId][employeeId] == uint64(runId)) revert AlreadyPaid();
+            if (lastPaidRun[companyId][employeeId] == runId) revert AlreadyPaid();
             if (company.payrollBalance < employee.salary) revert InsufficientPayrollBalance();
 
-            lastPaidRun[companyId][employeeId] = uint64(runId);
+            lastPaidRun[companyId][employeeId] = runId;
             company.payrollBalance -= employee.salary;
             totalPaid += employee.salary;
 
@@ -175,6 +175,21 @@ contract PayChadPayroll {
     function getEmployeeIds(uint256 companyId) external view returns (uint256[] memory) {
         if (companies[companyId].owner == address(0)) revert CompanyNotFound();
         return employeeIds[companyId];
+    }
+
+    function getActiveEmployeeIds(uint256 companyId) external view returns (uint256[] memory activeIds) {
+        if (companies[companyId].owner == address(0)) revert CompanyNotFound();
+        uint256[] memory ids = employeeIds[companyId];
+        activeIds = new uint256[](ids.length);
+        uint256 count;
+        for (uint256 i = 0; i < ids.length; i++) {
+            if (employees[companyId][ids[i]].active) {
+                activeIds[count++] = ids[i];
+            }
+        }
+        assembly {
+            mstore(activeIds, count)
+        }
     }
 
     function getCompanyForOwner(address owner) external view returns (uint256 companyId) {
