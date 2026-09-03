@@ -4,6 +4,8 @@ import type { PayChadDomainEvent } from "./events";
 export type PersistResult = "inserted" | "replayed";
 type JsonValue = null | string | number | boolean | readonly JsonValue[] | { readonly [key: string]: JsonValue | undefined };
 
+type HexString = `0x${string}`;
+
 export async function persistPayChadEvent(db: Database, event: PayChadDomainEvent): Promise<PersistResult> {
   return db.begin(async (transaction) => persistPayChadEventInTransaction(transaction as unknown as Database, event));
 }
@@ -25,12 +27,12 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     ON CONFLICT (chain_id, transaction_hash) DO NOTHING
   `;
 
-  const [transaction] = await db<{ block_number: string; block_hash: HexString; transaction_index: number }[]>`
-    SELECT block_number::text, block_hash, transaction_index
+  const [transaction] = await db<{ block_number: string; block_hash: HexString; transaction_index: string }[]>`
+    SELECT block_number::text, block_hash, transaction_index::text AS transaction_index
     FROM blockchain_transactions
     WHERE chain_id = ${event.chainId.toString()} AND transaction_hash = ${event.transactionHash}
   `;
-  if (!transaction || transaction.block_number !== event.blockNumber.toString() || transaction.block_hash !== event.blockHash || transaction.transaction_index !== event.transactionIndex) {
+  if (!transaction || transaction.block_number !== event.blockNumber.toString() || transaction.block_hash !== event.blockHash || transaction.transaction_index !== event.transactionIndex.toString()) {
     throw new Error("Conflicting transaction provenance for an existing transaction hash");
   }
 
@@ -103,5 +105,3 @@ function stringifyBigInts(value: unknown): JsonValue {
   if (typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
   throw new Error("Unsupported event payload value");
 }
-
-type HexString = `0x${string}`;
