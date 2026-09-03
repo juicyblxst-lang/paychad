@@ -17,12 +17,12 @@ function encodedLog<T extends (typeof payChadPayrollEvents)[number]["name"]>(eve
   return { chainId: CHAIN_ID, blockNumber: 100n, blockHash: BLOCK_HASH, transactionHash, transactionIndex, logIndex, address: CONTRACT, topics: topics as readonly Hex[], data };
 }
 function companyEvent(logIndex = 0n, transactionHash = TX(1), transactionIndex = 0): RawBlockchainLog { return encodedLog("CompanyRegistered", [1n, OWNER], [{ type: "string" }], ["PayChad"], logIndex, transactionHash, transactionIndex); }
-function employeeEvent(logIndex = 0n, transactionHash = TX(2), transactionIndex = 1): RawBlockchainLog { return encodedLog("EmployeeAdded", [1n, 1n, EMPLOYEE], [{ type: "uint256" }], [250000000n], logIndex, transactionHash, transactionIndex); }
-function statusEvent(active: boolean, logIndex = 0n, transactionHash = TX(3), transactionIndex = 2): RawBlockchainLog { return encodedLog("EmployeeStatusChanged", [1n, 1n], [{ type: "bool" }], [active], logIndex, transactionHash, transactionIndex); }
+function employeeEvent(logIndex = 0n, transactionHash = TX(2), transactionIndex = 1, employeeId = 1n): RawBlockchainLog { return encodedLog("EmployeeAdded", [1n, employeeId, EMPLOYEE], [{ type: "uint256" }], [250000000n], logIndex, transactionHash, transactionIndex); }
+function statusEvent(active: boolean, logIndex = 0n, transactionHash = TX(3), transactionIndex = 2, employeeId = 1n): RawBlockchainLog { return encodedLog("EmployeeStatusChanged", [1n, employeeId], [{ type: "bool" }], [active], logIndex, transactionHash, transactionIndex); }
 function fundedEvent(logIndex = 0n, transactionHash = TX(4), transactionIndex = 3): RawBlockchainLog { return encodedLog("PayrollFunded", [1n, OWNER], [{ type: "uint256" }], [1000000000n], logIndex, transactionHash, transactionIndex); }
-function runCreatedEvent(logIndex = 0n, transactionHash = TX(5), transactionIndex = 4): RawBlockchainLog { return encodedLog("PayrollRunCreated", [1n, 1n], [], [], logIndex, transactionHash, transactionIndex); }
-function paymentEvent(logIndex = 0n, transactionHash = TX(6), transactionIndex = 5): RawBlockchainLog { return encodedLog("PayrollPayment", [1n, 1n, 1n], [{ type: "address" }, { type: "uint256" }], [EMPLOYEE, 250000000n], logIndex, transactionHash, transactionIndex); }
-function completedEvent(logIndex = 0n, transactionHash = TX(6), transactionIndex = 5): RawBlockchainLog { return encodedLog("PayrollRunCompleted", [1n, 1n], [{ type: "uint256" }, { type: "uint256" }], [250000000n, 1n], logIndex, transactionHash, transactionIndex); }
+function runCreatedEvent(logIndex = 0n, transactionHash = TX(5), transactionIndex = 4, runId = 1n): RawBlockchainLog { return encodedLog("PayrollRunCreated", [1n, runId], [], [], logIndex, transactionHash, transactionIndex); }
+function paymentEvent(logIndex = 0n, transactionHash = TX(6), transactionIndex = 5, employeeId = 1n): RawBlockchainLog { return encodedLog("PayrollPayment", [1n, 1n, employeeId], [{ type: "address" }, { type: "uint256" }], [EMPLOYEE, 250000000n], logIndex, transactionHash, transactionIndex); }
+function completedEvent(logIndex = 0n, transactionHash = TX(6), transactionIndex = 5, totalPaid = 250000000n, employeeCount = 1n): RawBlockchainLog { return encodedLog("PayrollRunCompleted", [1n, 1n], [{ type: "uint256" }, { type: "uint256" }], [totalPaid, employeeCount], logIndex, transactionHash, transactionIndex); }
 function withdrawnEvent(logIndex = 0n, transactionHash = TX(7), transactionIndex = 6): RawBlockchainLog { return encodedLog("PayrollWithdrawn", [1n, OWNER], [{ type: "uint256" }], [750000000n], logIndex, transactionHash, transactionIndex); }
 
 const TEST_EVENTS = [companyEvent(), employeeEvent(), statusEvent(false), fundedEvent(), runCreatedEvent(), paymentEvent(0n), completedEvent(1n), withdrawnEvent()];
@@ -74,6 +74,27 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
     expect(payment?.amount).toBe("250000000");
     const [funded] = await db`SELECT event_data::text AS event_data FROM indexed_events WHERE chain_id = ${CHAIN_ID.toString()} AND event_name = 'PayrollFunded'`;
     expect(funded?.event_data).toContain('"amount":"1000000000"');
+  });
+
+  it("aggregates multiple completion events for one payroll run exactly once per event", async () => {
+    await persistPayChadEvents(db, [
+      decodePayChadEvent(companyEvent()),
+      decodePayChadEvent(employeeEvent()),
+      decodePayChadEvent(runCreatedEvent()),
+      decodePayChadEvent(completedEvent(1n, TX(6), 5, 250000000n, 1n)),
+      decodePayChadEvent(completedEvent(2n, TX(8), 8, 300000000n, 1n)),
+    ]);
+    await expect(persistPayChadEvent(db, decodePayChadEvent(completedEvent(2n, TX(8), 8, 300000000n, 1n)))).resolves.toBe("replayed");
+    const [run] = await db`SELECT total_paid_base_units::text AS total_paid, employee_count::text AS employee_count FROM payroll_runs WHERE chain_id = ${CHAIN_ID.toString()} AND company_id = '1' AND run_id = '1'`;
+    expect(run?.total_paid).toBe("550000000");
+    expect(run?.employee_count).toBe("2");
+  });
+
+  it("preserves identifiers beyond signed bigint range", async () => {
+    const wideEmployeeId = 9223372036854775808n;
+    await persistPayChadEvents(db, [decodePayChadEvent(companyEvent()), decodePayChadEvent(employeeEvent(50n, TX(50), 50, wideEmployeeId))]);
+    const [employee] = await db`SELECT employee_id::text AS employee_id FROM employees WHERE chain_id = ${CHAIN_ID.toString()} AND company_id = '1'`;
+    expect(employee?.employee_id).toBe(wideEmployeeId.toString());
   });
 
   it("handles multiple logs from one transaction without collision", async () => {
