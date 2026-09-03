@@ -53,7 +53,17 @@ export function decodePayChadEvent(log: RawBlockchainLog): PayChadDomainEvent {
 
   const [decoded] = parseEventLogs({
     abi: payChadPayrollEvents,
-    logs: [{ data: log.data, topics: log.topics as unknown as [Hex, ...Hex[]] }],
+    logs: [{
+      address: log.address,
+      blockHash: log.blockHash ?? null,
+      blockNumber: log.blockNumber,
+      data: log.data,
+      logIndex: Number(log.logIndex),
+      removed: false,
+      topics: log.topics as unknown as [Hex, ...Hex[]],
+      transactionHash: log.transactionHash,
+      transactionIndex: log.transactionIndex ?? null,
+    }],
     strict: true,
   });
   if (!decoded) throw new Error("Unsupported or malformed PayChadPayroll event log");
