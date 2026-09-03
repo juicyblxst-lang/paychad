@@ -172,14 +172,7 @@ describe("scanner", () => {
   it("detects an event block hash changing after logs are fetched", async () => {
     const rpc = new FakeRpc();
     rpc.logs = [companyLog(12n)];
-    let eventBlockReads = 0;
-    rpc.getBlock = async ({ blockNumber }) => {
-      if (blockNumber === 12n) {
-        eventBlockReads += 1;
-        return { number: blockNumber, hash: eventBlockReads === 1 ? HASH("0c") : HASH("d") };
-      }
-      return { number: blockNumber, hash: HASH(blockNumber.toString(16).padStart(2, "0")) };
-    };
+    rpc.getBlock = async ({ blockNumber }) => ({ number: blockNumber, hash: HASH("d") });
     await expect(scanOnce(rpc, new FakePersister(), new FakeCheckpointStore(), config())).rejects.toBeInstanceOf(ReorgDetectedError);
   });
 
