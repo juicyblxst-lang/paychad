@@ -69,7 +69,7 @@ contract PayChadPayrollTest {
         ids[0] = 1;
         payroll.executePayroll(companyId, runId, ids);
         require(token.balanceOf(employee) == 250e6, "employee unpaid");
-        (, , , , uint256 remaining) = payroll.getCompany(companyId);
+        (,,,, uint256 remaining) = payroll.getCompany(companyId);
         require(remaining == 0, "balance remains");
     }
 
@@ -82,9 +82,7 @@ contract PayChadPayrollTest {
         uint256[] memory ids = new uint256[](2);
         ids[0] = 1;
         ids[1] = 1;
-        (bool ok,) = address(payroll).call(
-            abi.encodeCall(payroll.executePayroll, (companyId, runId, ids))
-        );
+        (bool ok,) = address(payroll).call(abi.encodeCall(payroll.executePayroll, (companyId, runId, ids)));
         require(!ok, "duplicate paid");
         require(token.balanceOf(employee) == 0, "partial payment");
     }
@@ -92,9 +90,7 @@ contract PayChadPayrollTest {
     function testUnauthorizedCompanyMutationReverts() public {
         uint256 companyId = payroll.registerCompany("PayChad Demo");
         UnauthorizedCaller caller = new UnauthorizedCaller();
-        (bool ok,) = address(caller).call(
-            abi.encodeCall(caller.addEmployee, (payroll, companyId, employee, 250e6))
-        );
+        (bool ok,) = address(caller).call(abi.encodeCall(caller.addEmployee, (payroll, companyId, employee, 250e6)));
         require(!ok, "unauthorized mutation");
     }
 }
