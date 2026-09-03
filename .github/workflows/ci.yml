@@ -20,3 +20,31 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @paychad/web typecheck
       - run: pnpm --filter @paychad/web build
+
+  api:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.15.1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @paychad/api typecheck
+      - run: pnpm --filter @paychad/api build
+      - run: pnpm --filter @paychad/api test
+
+  contracts:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: foundry-rs/foundry-toolchain@v1
+      - run: forge fmt --check
+      - run: forge build
+      - run: forge test
