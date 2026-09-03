@@ -39,7 +39,7 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
       chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name, event_data
     ) VALUES (
       ${event.chainId}, ${event.blockNumber}, ${event.transactionHash}, ${event.logIndex},
-      ${event.blockHash}, ${event.contractAddress}, ${event.kind}, ${JSON.stringify(eventData)}::jsonb
+      ${event.blockHash}, ${event.contractAddress}, ${event.kind}, ${eventData}::jsonb
     )
     ON CONFLICT (chain_id, block_number, transaction_hash, log_index) DO NOTHING
     RETURNING chain_id, block_number, transaction_hash, log_index
@@ -56,7 +56,7 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
         AND block_hash = ${event.blockHash}
         AND contract_address = ${event.contractAddress}
         AND event_name = ${event.kind}
-        AND event_data = ${JSON.stringify(eventData)}::jsonb
+        AND event_data = ${eventData}::jsonb
     `;
     if (!matching) throw new Error("Conflicting event data for an existing blockchain event identity");
     return "replayed";
