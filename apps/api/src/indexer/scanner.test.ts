@@ -31,7 +31,10 @@ class FakeCheckpointStore implements CheckpointStore {
   checkpoint: Awaited<ReturnType<CheckpointStore["get"]>> = null;
   saves = 0;
   async get(): Promise<Awaited<ReturnType<CheckpointStore["get"]>>> { return this.checkpoint; }
-  async save(value: NonNullable<Awaited<ReturnType<CheckpointStore["get"]>>>): Promise<void> { this.checkpoint = value; this.saves += 1; }
+  async save(value: NonNullable<Awaited<ReturnType<CheckpointStore["get"]>>>): Promise<void> {
+    if (!this.checkpoint || value.lastProcessedBlock >= this.checkpoint.lastProcessedBlock) this.checkpoint = value;
+    this.saves += 1;
+  }
 }
 
 class FakePersister implements EventPersister {
@@ -201,6 +204,25 @@ describe("scanner", () => {
     expect(rpc.getLogsCalls).toEqual([{ fromBlock: 10n, toBlock: 19n }, { fromBlock: 10n, toBlock: 19n }]);
     expect(persister.events).toHaveLength(1);
     expect(checkpoints.checkpoint?.lastProcessedBlock).toBe(19n);
+  });
+
+  it("does not allow a slower concurrent worker to move the checkpoint backwards", async () => {
+    const rpc = new FakeRpc();
+    const checkpoints = new FakeCheckpointStore();
+    checkpoints.checkpoint = { chainId: CHAIN_ID, contractAddress: CONTRACT, lastProcessedBlock: 19n, lastProcessedBlockHash: HASH("13") };
+    const slowStarted = new Promise<void>((resolve) => { resolveSlow = resolve; });
+    let resolveSlow: () => void;
+    const slowPersister: EventPersister = { persist: async () => { resolveSlow(); await slowGate; } };
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    let releaseSlow: () => void;
+
+    const slow = scanOnce(rpc, slowPersister, checkpoints, config({ batchSize: 10n }));
+    await slowStarted;
+    await scanOnce(rpc, new FakePersister(), checkpoints, config({ batchSize: 20n }));
+    releaseSlow();
+    await slow;
+
+    expect(checkpoints.checkpoint?.lastProcessedBlock).toBe(39n);
   });
 
   it("does not duplicate a range when a completed scan is followed by a worker restart", async () => {
