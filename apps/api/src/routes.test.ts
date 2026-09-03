@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDatabase, type Database } from "./db/database";
+import { createDatabase } from "./db/database";
 import { buildServer } from "./server";
 
 const CHAIN_ID = "424242";
