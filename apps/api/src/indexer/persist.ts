@@ -4,29 +4,46 @@ import type { PayChadDomainEvent } from "./events";
 export type PersistResult = "inserted" | "replayed";
 
 export async function persistPayChadEvent(db: Database, event: PayChadDomainEvent): Promise<PersistResult> {
-  const existing = await db<{
-    block_hash: string;
-    contract_address: string;
-    event_name: string;
-    event_data: unknown;
-  }[]>`
-    SELECT block_hash, contract_address, event_name, event_data
-    FROM indexed_events
-    WHERE chain_id = ${event.chainId}
-      AND block_number = ${event.blockNumber}
-      AND transaction_hash = ${event.transactionHash}
-      AND log_index = ${event.logIndex}
-  `;
+  if (!event.blockHash) throw new Error("Block hash is required for persistence");
+  if (event.transactionIndex == null) throw new Error("Transaction index is required for persistence");
 
   const eventData = serializeEvent(event);
+  const inserted = await db<{
+    chain_id: string;
+    block_number: string;
+    transaction_hash: string;
+    log_index: string;
+  }[]>`
+    INSERT INTO indexed_events (
+      chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name, event_data
+    ) VALUES (
+      ${event.chainId}, ${event.blockNumber}, ${event.transactionHash}, ${event.logIndex},
+      ${event.blockHash}, ${event.contractAddress}, ${event.kind}, ${JSON.stringify(eventData)}::jsonb
+    )
+    ON CONFLICT (chain_id, block_number, transaction_hash, log_index) DO NOTHING
+    RETURNING chain_id, block_number, transaction_hash, log_index
+  `;
 
-  if (existing.length > 0) {
-    const row = existing[0]!;
+  if (inserted.length === 0) {
+    const [existing] = await db<{
+      block_hash: string;
+      contract_address: string;
+      event_name: string;
+      event_data: unknown;
+    }[]>`
+      SELECT block_hash, contract_address, event_name, event_data
+      FROM indexed_events
+      WHERE chain_id = ${event.chainId}
+        AND block_number = ${event.blockNumber}
+        AND transaction_hash = ${event.transactionHash}
+        AND log_index = ${event.logIndex}
+    `;
+    if (!existing) throw new Error("Event conflict disappeared before replay verification");
     if (
-      row.block_hash.toLowerCase() !== event.blockHash!.toLowerCase()
-      || row.contract_address.toLowerCase() !== event.contractAddress.toLowerCase()
-      || row.event_name !== event.kind
-      || JSON.stringify(row.event_data) !== JSON.stringify(eventData)
+      existing.block_hash.toLowerCase() !== event.blockHash.toLowerCase()
+      || existing.contract_address.toLowerCase() !== event.contractAddress.toLowerCase()
+      || existing.event_name !== event.kind
+      || JSON.stringify(existing.event_data) !== JSON.stringify(eventData)
     ) {
       throw new Error("Conflicting event data for an existing blockchain event identity");
     }
@@ -37,18 +54,9 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
     INSERT INTO blockchain_transactions (
       chain_id, transaction_hash, block_number, block_hash, transaction_index, confirmed_at
     ) VALUES (
-      ${event.chainId}, ${event.transactionHash}, ${event.blockNumber}, ${event.blockHash!}, ${event.transactionIndex!}, now()
+      ${event.chainId}, ${event.transactionHash}, ${event.blockNumber}, ${event.blockHash}, ${event.transactionIndex}, now()
     )
     ON CONFLICT (chain_id, transaction_hash) DO NOTHING
-  `;
-
-  await db`
-    INSERT INTO indexed_events (
-      chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name, event_data
-    ) VALUES (
-      ${event.chainId}, ${event.blockNumber}, ${event.transactionHash}, ${event.logIndex},
-      ${event.blockHash!}, ${event.contractAddress}, ${event.kind}, ${JSON.stringify(eventData)}::jsonb
-    )
   `;
 
   const observedAt = new Date();
@@ -71,21 +79,22 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
       `;
       break;
 
-    case "EmployeeStatusChanged":
-      await db`
+    case "EmployeeStatusChanged": {
+      const result = await db`
         UPDATE employees
         SET active = ${event.active}, updated_at = ${observedAt}
         WHERE chain_id = ${event.chainId}
           AND company_id = ${event.companyId}
           AND employee_id = ${event.employeeId}
       `;
-      await requireAffectedRow(db, "EmployeeStatusChanged prerequisite employee is missing");
+      if (result.count !== 1) throw new Error("EmployeeStatusChanged prerequisite employee is missing");
       break;
+    }
 
     case "PayrollFunded":
     case "PayrollWithdrawn":
-      // These events are fully represented by indexed_events. PostgreSQL must not
-      // invent an off-chain payroll balance that can diverge from Monad.
+      // These events remain durably represented by indexed_events. No off-chain
+      // payroll balance is maintained because Monad is the financial authority.
       break;
 
     case "PayrollRunCreated":
@@ -107,16 +116,17 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
       `;
       break;
 
-    case "PayrollRunCompleted":
-      await db`
+    case "PayrollRunCompleted": {
+      const result = await db`
         UPDATE payroll_runs
         SET completed_at = ${observedAt}, total_paid_base_units = ${event.totalPaid}, employee_count = ${event.employeeCount}
         WHERE chain_id = ${event.chainId}
           AND company_id = ${event.companyId}
           AND run_id = ${event.runId}
       `;
-      await requireAffectedRow(db, "PayrollRunCompleted prerequisite payroll run is missing");
+      if (result.count !== 1) throw new Error("PayrollRunCompleted prerequisite payroll run is missing");
       break;
+    }
   }
 
   return "inserted";
@@ -132,7 +142,9 @@ export async function persistPayChadEvents(db: Database, events: readonly PayCha
 
 function compareEventOrder(a: PayChadDomainEvent, b: PayChadDomainEvent): number {
   if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
-  if (a.transactionIndex !== b.transactionIndex) return (a.transactionIndex ?? Number.MAX_SAFE_INTEGER) - (b.transactionIndex ?? Number.MAX_SAFE_INTEGER);
+  const aTx = a.transactionIndex ?? Number.MAX_SAFE_INTEGER;
+  const bTx = b.transactionIndex ?? Number.MAX_SAFE_INTEGER;
+  if (aTx !== bTx) return aTx - bTx;
   if (a.logIndex !== b.logIndex) return a.logIndex < b.logIndex ? -1 : 1;
   return 0;
 }
@@ -159,12 +171,4 @@ function stringifyBigInts(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
   }
   return value;
-}
-
-async function requireAffectedRow(db: Database, message: string): Promise<void> {
-  // The postgres tagged-query result exposes count; use a query-local marker so
-  // prerequisite absence becomes a rollback rather than silently accepted state.
-  // Callers use this only after a deterministic UPDATE.
-  const [{ exists }] = await db<{ exists: boolean }[]>`SELECT false AS exists`;
-  if (!exists) throw new Error(message);
 }
