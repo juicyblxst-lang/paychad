@@ -54,6 +54,8 @@ Phase 2A implements deterministic decoding and atomic event-to-projection persis
 
 Projection prerequisites are strict: employee status changes require an indexed employee; payroll payments require the indexed company, run and employee; payroll completion requires the indexed run. Missing prerequisites cause the transaction to roll back instead of fabricating state. Batched events are ordered by block, transaction index and log index before projection so same-transaction logs can be processed deterministically.
 
+`PayrollRunCompleted` is an execution summary, not a unique final-run marker: the contract can execute different employee subsets under the same run ID and emits one completion event per execution call. The projection therefore accumulates `total_paid_base_units` and `employee_count` once per unique event identity. Replaying the same event does not increment either value again.
+
 ## Boundaries
 - `apps/web`: presentation, wallet UX and direct client-side blockchain interactions.
 - `apps/api`: Fastify HTTP service, database foundation, deterministic event domain and persistence boundary. Live indexing/jobs remain future work.
@@ -67,7 +69,7 @@ Projection prerequisites are strict: employee status changes require an indexed 
 Monad contracts remain authoritative for company ownership, payroll funding, payroll execution and token movement. PostgreSQL never maintains an independent financial balance or ledger. `PayrollFunded` and `PayrollWithdrawn` are durably observable through `indexed_events.event_data`; they do not create a synthetic off-chain balance.
 
 ## Persistence boundary
-The database is intentionally a projection/coordination store. Company and employee rows represent indexed contract state; payroll run/payment rows represent emitted contract events; blockchain transaction and indexed event rows preserve observation identity; checkpoints support future indexer progress; idempotency keys support future retry-safe backend mutations.
+The database is intentionally a projection/coordination store. Company and employee rows represent indexed contract state; payroll run/payment rows represent emitted contract events; blockchain transaction and indexed event rows preserve observation identity; checkpoints support future indexer progress; idempotency keys support future retry-safe backend mutations. Contract-derived employee/run/count identifiers are stored with sufficient numeric width for their uint64-backed state and uint256 event ABI representation.
 
 ## Ordering and replay
 Blockchain event identity is `(chain_id, block_number, transaction_hash, log_index)`. Payroll run identity is `(chain_id, company_id, run_id)`. Payroll payment identity is `(chain_id, company_id, run_id, employee_id)`. Replaying the same event is idempotent. Out-of-order events that require missing prerequisite projections fail and roll back, allowing a future indexer to retry after earlier blocks/events are available.
