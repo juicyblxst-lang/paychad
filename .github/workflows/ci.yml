@@ -1,4 +1,5 @@
 name: CI
+
 on:
   push:
     branches: [main]
@@ -7,9 +8,6 @@ on:
 jobs:
   web:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: apps/web
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -19,6 +17,6 @@ jobs:
         with:
           node-version: 20
           cache: pnpm
-      - run: pnpm install --frozen-lockfile=false
-      - run: pnpm typecheck
-      - run: pnpm build
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @paychad/web typecheck
+      - run: pnpm --filter @paychad/web build
