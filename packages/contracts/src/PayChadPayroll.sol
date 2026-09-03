@@ -51,8 +51,12 @@ contract PayChadPayroll {
     event EmployeeStatusChanged(uint256 indexed companyId, uint256 indexed employeeId, bool active);
     event PayrollFunded(uint256 indexed companyId, address indexed funder, uint256 amount);
     event PayrollRunCreated(uint256 indexed companyId, uint256 indexed runId);
-    event PayrollPayment(uint256 indexed companyId, uint256 indexed runId, uint256 indexed employeeId, address recipient, uint256 amount);
-    event PayrollRunCompleted(uint256 indexed companyId, uint256 indexed runId, uint256 totalPaid, uint256 employeeCount);
+    event PayrollPayment(
+        uint256 indexed companyId, uint256 indexed runId, uint256 indexed employeeId, address recipient, uint256 amount
+    );
+    event PayrollRunCompleted(
+        uint256 indexed companyId, uint256 indexed runId, uint256 totalPaid, uint256 employeeCount
+    );
     event PayrollWithdrawn(uint256 indexed companyId, address indexed recipient, uint256 amount);
 
     constructor(address usdcAddress) {
@@ -77,13 +81,7 @@ contract PayChadPayroll {
         if (companyIdByOwner[msg.sender] != 0) revert CompanyAlreadyExists();
         companyId = nextCompanyId++;
         companyIdByOwner[msg.sender] = companyId;
-        companies[companyId] = Company({
-            owner: msg.sender,
-            name: name,
-            employeeCount: 0,
-            nextRunId: 1,
-            payrollBalance: 0
-        });
+        companies[companyId] = Company({owner: msg.sender, name: name, employeeCount: 0, nextRunId: 1, payrollBalance: 0});
         emit CompanyRegistered(companyId, msg.sender, name);
     }
 
