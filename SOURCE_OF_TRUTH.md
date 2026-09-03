@@ -25,4 +25,8 @@ The Phase 2A event domain is deterministic: viem decodes the current PayChadPayr
 
 Out-of-order events with missing prerequisites are rejected and rolled back rather than fabricating state. A future worker must retry after prerequisite events have been indexed. `PayrollFunded` and `PayrollWithdrawn` remain observable in `indexed_events.event_data` and do not create an off-chain payroll balance.
 
+`PayrollRunCompleted` is emitted after each `executePayroll` call, not only once for the lifetime of a run. Multiple valid execution batches may therefore share the same `(chain_id, company_id, run_id)`. The PostgreSQL run projection accumulates each unique completion event's `totalPaid` and `employeeCount`; replaying an already-indexed completion event does not increment those totals again.
+
+Contract-derived employee/run/count identifiers are persisted with enough numeric width for their uint64-backed state and uint256 event ABI representation. Monetary values remain exact integer base units; JavaScript floating-point numbers are not used for persistence.
+
 Off-chain data must never silently override authoritative on-chain financial state.
