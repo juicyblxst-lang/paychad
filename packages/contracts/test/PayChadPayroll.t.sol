@@ -1,0 +1,93 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {PayChadPayroll} from "../src/PayChadPayroll.sol";
+
+contract MockUSDC {
+    mapping(address => uint256) public balanceOf;
+    mapping(address => mapping(address => uint256)) public allowance;
+
+    function mint(address to, uint256 amount) external {
+        balanceOf[to] += amount;
+    }
+
+    function approve(address spender, uint256 amount) external returns (bool) {
+        allowance[msg.sender][spender] = amount;
+        return true;
+    }
+
+    function transfer(address to, uint256 amount) external returns (bool) {
+        require(balanceOf[msg.sender] >= amount, "balance");
+        balanceOf[msg.sender] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+
+    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+        require(balanceOf[from] >= amount, "balance");
+        require(allowance[from][msg.sender] >= amount, "allowance");
+        allowance[from][msg.sender] -= amount;
+        balanceOf[from] -= amount;
+        balanceOf[to] += amount;
+        return true;
+    }
+}
+
+contract PayChadPayrollTest {
+    MockUSDC internal token;
+    PayChadPayroll internal payroll;
+    address internal employee = address(0xBEEF);
+
+    function setUp() public {
+        token = new MockUSDC();
+        payroll = new PayChadPayroll(address(token));
+        token.mint(address(this), 1_000e6);
+    }
+
+    function testRegisterCompanyAndEmployee() public {
+        uint256 companyId = payroll.registerCompany("PayChad Demo");
+        uint256 employeeId = payroll.addEmployee(companyId, employee, 250e6);
+        PayChadPayroll.Employee memory stored = payroll.getEmployee(companyId, employeeId);
+        require(stored.wallet == employee, "wallet");
+        require(stored.salary == 250e6, "salary");
+        require(stored.active, "active");
+    }
+
+    function testFundAndExecutePayroll() public {
+        uint256 companyId = payroll.registerCompany("PayChad Demo");
+        payroll.addEmployee(companyId, employee, 250e6);
+        token.approve(address(payroll), 250e6);
+        payroll.fundPayroll(companyId, 250e6);
+        uint256 runId = payroll.createPayrollRun(companyId);
+        uint256[] memory ids = new uint256[](1);
+        ids[0] = 1;
+        payroll.executePayroll(companyId, runId, ids);
+        require(token.balanceOf(employee) == 250e6, "employee unpaid");
+        (, , , , uint256 remaining) = payroll.getCompany(companyId);
+        require(remaining == 0, "balance remains");
+    }
+
+    function testDuplicateEmployeeInSameRunReverts() public {
+        uint256 companyId = payroll.registerCompany("PayChad Demo");
+        payroll.addEmployee(companyId, employee, 250e6);
+        token.approve(address(payroll), 500e6);
+        payroll.fundPayroll(companyId, 500e6);
+        uint256 runId = payroll.createPayrollRun(companyId);
+        uint256[] memory ids = new uint256[](2);
+        ids[0] = 1;
+        ids[1] = 1;
+        (bool ok,) = address(payroll).call(
+            abi.encodeCall(payroll.executePayroll, (companyId, runId, ids))
+        );
+        require(!ok, "duplicate paid");
+        require(token.balanceOf(employee) == 0, "partial payment");
+    }
+
+    function testUnauthorizedCompanyMutationReverts() public {
+        uint256 companyId = payroll.registerCompany("PayChad Demo");
+        (bool ok,) = address(payroll).call(
+            abi.encodeCall(payroll.addEmployee, (companyId, employee, 250e6))
+        );
+        require(!ok, "unauthorized mutation");
+    }
+}
