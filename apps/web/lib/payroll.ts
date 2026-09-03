@@ -11,19 +11,20 @@ export const payrollAbi = [
     name: "getCompany",
     stateMutability: "view",
     inputs: [{ name: "companyId", type: "uint256" }],
-    outputs: [
-      {
-        name: "",
-        type: "tuple",
-        components: [
-          { name: "owner", type: "address" },
-          { name: "name", type: "string" },
-          { name: "employeeCount", type: "uint64" },
-          { name: "nextRunId", type: "uint64" },
-          { name: "payrollBalance", type: "uint256" },
-        ],
-      },
-    ],
+    outputs: [{ name: "", type: "tuple", components: [
+      { name: "owner", type: "address" },
+      { name: "name", type: "string" },
+      { name: "employeeCount", type: "uint64" },
+      { name: "nextRunId", type: "uint64" },
+      { name: "payrollBalance", type: "uint256" },
+    ] }],
+  },
+  {
+    type: "function",
+    name: "getActiveEmployeeIds",
+    stateMutability: "view",
+    inputs: [{ name: "companyId", type: "uint256" }],
+    outputs: [{ name: "activeIds", type: "uint256[]" }],
   },
   {
     type: "function",
@@ -83,6 +84,25 @@ export const payrollAbi = [
   },
   {
     type: "event",
+    name: "PayrollFunded",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "companyId", type: "uint256" },
+      { indexed: true, name: "funder", type: "address" },
+      { indexed: false, name: "amount", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
+    name: "PayrollRunCreated",
+    anonymous: false,
+    inputs: [
+      { indexed: true, name: "companyId", type: "uint256" },
+      { indexed: true, name: "runId", type: "uint256" },
+    ],
+  },
+  {
+    type: "event",
     name: "PayrollPayment",
     anonymous: false,
     inputs: [
@@ -92,5 +112,22 @@ export const payrollAbi = [
       { indexed: false, name: "recipient", type: "address" },
       { indexed: false, name: "amount", type: "uint256" },
     ],
+  },
+] as const;
+
+export const erc20Abi = [
+  {
+    type: "function",
+    name: "approve",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "spender", type: "address" }, { name: "amount", type: "uint256" }],
+    outputs: [{ name: "", type: "bool" }],
+  },
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
