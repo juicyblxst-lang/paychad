@@ -1,8 +1,7 @@
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { createDatabase } from "./database";
+import { join } from "node:path";
+import { createDatabase, type Database } from "./database";
 
 const MIGRATION_PATTERN = /^(\d{4}_[a-z0-9-]+)\.sql$/;
 const MIGRATION_LOCK_KEY = 814233771;
@@ -14,7 +13,7 @@ interface MigrationFile {
 }
 
 async function loadMigrations(): Promise<MigrationFile[]> {
-  const directory = join(dirname(fileURLToPath(import.meta.url)), "../../migrations");
+  const directory = join(__dirname, "../../migrations");
   const names = (await readdir(directory)).filter((name) => name.endsWith(".sql")).sort();
   const migrations: MigrationFile[] = [];
 
@@ -45,8 +44,9 @@ export async function migrate(): Promise<void> {
       const contents = await readFile(migration.path, "utf8");
 
       await sql.begin(async (tx) => {
-        await tx`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_KEY})`;
-        await tx.unsafe(`
+        const db = tx as unknown as Database;
+        await db`SELECT pg_advisory_xact_lock(${MIGRATION_LOCK_KEY})`;
+        await db.unsafe(`
           CREATE TABLE IF NOT EXISTS schema_migrations (
             migration_id TEXT PRIMARY KEY,
             checksum TEXT NOT NULL CHECK (checksum ~ '^[0-9a-f]{64}$'),
@@ -54,7 +54,7 @@ export async function migrate(): Promise<void> {
           )
         `);
 
-        const [applied] = await tx<{ checksum: string }[]>`
+        const [applied] = await db<{ checksum: string }[]>`
           SELECT checksum
           FROM schema_migrations
           WHERE migration_id = ${migration.id}
@@ -67,8 +67,8 @@ export async function migrate(): Promise<void> {
           return;
         }
 
-        await tx.unsafe(contents);
-        await tx`
+        await db.unsafe(contents);
+        await db`
           INSERT INTO schema_migrations (migration_id, checksum)
           VALUES (${migration.id}, ${migration.checksum})
         `;
@@ -81,7 +81,7 @@ export async function migrate(): Promise<void> {
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1]?.endsWith("/migrate.ts") || process.argv[1]?.endsWith("/migrate.js")) {
   migrate().catch((error) => {
     console.error(error);
     process.exitCode = 1;
