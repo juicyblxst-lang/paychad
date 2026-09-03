@@ -33,6 +33,12 @@ contract MockUSDC {
     }
 }
 
+contract UnauthorizedCaller {
+    function addEmployee(PayChadPayroll payroll, uint256 companyId, address wallet, uint256 salary) external {
+        payroll.addEmployee(companyId, wallet, salary);
+    }
+}
+
 contract PayChadPayrollTest {
     MockUSDC internal token;
     PayChadPayroll internal payroll;
@@ -85,8 +91,9 @@ contract PayChadPayrollTest {
 
     function testUnauthorizedCompanyMutationReverts() public {
         uint256 companyId = payroll.registerCompany("PayChad Demo");
-        (bool ok,) = address(payroll).call(
-            abi.encodeCall(payroll.addEmployee, (companyId, employee, 250e6))
+        UnauthorizedCaller caller = new UnauthorizedCaller();
+        (bool ok,) = address(caller).call(
+            abi.encodeCall(caller.addEmployee, (payroll, companyId, employee, 250e6))
         );
         require(!ok, "unauthorized mutation");
     }
