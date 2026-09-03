@@ -210,11 +210,11 @@ describe("scanner", () => {
     const rpc = new FakeRpc();
     const checkpoints = new FakeCheckpointStore();
     checkpoints.checkpoint = { chainId: CHAIN_ID, contractAddress: CONTRACT, lastProcessedBlock: 19n, lastProcessedBlockHash: HASH("13") };
-    const slowStarted = new Promise<void>((resolve) => { resolveSlow = resolve; });
     let resolveSlow: () => void;
-    const slowPersister: EventPersister = { persist: async () => { resolveSlow(); await slowGate; } };
-    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
     let releaseSlow: () => void;
+    const slowStarted = new Promise<void>((resolve) => { resolveSlow = resolve; });
+    const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
+    const slowPersister: EventPersister = { persist: async () => { resolveSlow(); await slowGate; } };
 
     const slow = scanOnce(rpc, slowPersister, checkpoints, config({ batchSize: 10n }));
     await slowStarted;
