@@ -1,4 +1,4 @@
-import { decodeEventLog, parseAbi, type Abi, type Address, type Hex } from "viem";
+import { parseEventLogs, parseAbi, type Address, type Hex } from "viem";
 
 export const payChadPayrollEvents = parseAbi([
   "event CompanyRegistered(uint256 indexed companyId, address indexed owner, string name)",
@@ -51,12 +51,13 @@ export function decodePayChadEvent(log: RawBlockchainLog): PayChadDomainEvent {
   if (!/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)) throw new Error("Invalid transaction hash");
   if (!/^0x[0-9a-fA-F]{40}$/.test(log.address)) throw new Error("Invalid contract address");
 
-  const decoded = decodeEventLog({
-    abi: payChadPayrollEvents as Abi,
-    data: log.data,
-    topics: log.topics as unknown as [Hex, ...Hex[]],
+  const [decoded] = parseEventLogs({
+    abi: payChadPayrollEvents,
+    logs: [{ data: log.data, topics: log.topics as unknown as [Hex, ...Hex[]] }],
     strict: true,
   });
+  if (!decoded) throw new Error("Unsupported or malformed PayChadPayroll event log");
+
   const args = decoded.args as Record<string, unknown>;
   const base: BaseDomainEvent = {
     chainId: log.chainId,
