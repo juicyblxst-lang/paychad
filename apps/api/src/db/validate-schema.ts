@@ -10,6 +10,7 @@ const CONTRACT = "0x3333333333333333333333333333333333333333";
 const TX = "0x" + "44".repeat(32);
 const BLOCK = "0x" + "55".repeat(32);
 const REQUEST_HASH = "aa".repeat(32);
+const EVENT_DATA = '{"recipient":"0x2222222222222222222222222222222222222222","amount":"1"}';
 const EXPECTED_FAILURE = "expected-constraint-failure";
 
 async function expectConstraintFailure(
@@ -65,8 +66,8 @@ export async function validateSchema(): Promise<void> {
       `;
       await db`
         INSERT INTO indexed_events (
-          chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name
-        ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment')
+          chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name, event_data
+        ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment', ${EVENT_DATA}::jsonb)
       `;
       await db`
         INSERT INTO payroll_runs (chain_id, company_id, run_id, created_at)
@@ -107,8 +108,8 @@ export async function validateSchema(): Promise<void> {
       sql,
       (db) => db`
         INSERT INTO indexed_events (
-          chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name
-        ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment')
+          chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name, event_data
+        ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment', ${EVENT_DATA}::jsonb)
       `,
       "blockchain event identity uniqueness",
     );
