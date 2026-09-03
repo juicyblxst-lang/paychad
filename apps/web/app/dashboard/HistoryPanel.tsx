@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { useAccount, useChainId, useReadContract } from "wagmi";
-import { monadTestnet } from "../../lib/monad";
+import { monadTestnet, PAYCHAD_CONTRACT_ADDRESS } from "../../lib/monad";
 import { payrollAbi } from "../../lib/payroll";
-import { PAYCHAD_CONTRACT_ADDRESS } from "../../lib/monad";
 
 type PayrollRun = {
   run_id: string;
@@ -56,7 +55,6 @@ export function HistoryPanel() {
     if (!API_URL || !address || !companyId || companyId === 0n || (chainId !== monadTestnet.id && chainId !== 143)) return;
     const controller = new AbortController();
     setError("");
-    const query = `chainId=${chainId}&owner=${encodeURIComponent(address)}`;
     const headers = { "x-wallet-address": address };
     void Promise.all([
       fetch(`${API_URL}/v1/companies/${companyId.toString()}/payroll-runs?chainId=${chainId}`, { headers, signal: controller.signal }),
@@ -65,15 +63,13 @@ export function HistoryPanel() {
       if (!runsResponse.ok || !paymentsResponse.ok) throw new Error("History API request failed");
       setRuns(await runsResponse.json() as PayrollRun[]);
       setPayments(await paymentsResponse.json() as Payment[]);
-      void query;
     }).catch((requestError: unknown) => {
       if (!controller.signal.aborted) setError(requestError instanceof Error ? requestError.message : "Unable to load payroll history");
     });
     return () => controller.abort();
   }, [address, chainId, companyId]);
 
-  if (!API_URL) return null;
-  if (!address || !companyId || companyId === 0n) return null;
+  if (!API_URL || !address || !companyId || companyId === 0n) return null;
 
   return (
     <section className="panel">
