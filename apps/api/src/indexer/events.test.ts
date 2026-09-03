@@ -72,8 +72,8 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
 
     const [payment] = await db<{ amount: string }[]>`SELECT amount_base_units::text AS amount FROM payroll_payments WHERE chain_id = ${CHAIN_ID}`;
     expect(payment?.amount).toBe("250000000");
-    const [funded] = await db<{ amount: string }[]>`SELECT event_data->'args'->>'amount' AS amount FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND event_name = 'PayrollFunded'`;
-    expect(funded?.amount).toBe("1000000000");
+    const [funded] = await db<{ event_data: string }[]>`SELECT event_data::text AS event_data FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND event_name = 'PayrollFunded'`;
+    expect(funded?.event_data).toContain('"amount":"1000000000"');
   });
 
   it("handles multiple logs from one transaction without collision", async () => {
