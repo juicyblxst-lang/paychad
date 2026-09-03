@@ -1,10 +1,10 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Address, formatUnits, parseUnits } from "viem";
 import { useAccount, useChainId, useReadContract, useWaitForTransactionReceipt, useWriteContract } from "wagmi";
-import { Address, parseUnits } from "viem";
-import { monad, monadTestnet, PAYCHAD_CONTRACT_ADDRESS } from "../../lib/monad";
-import { payrollAbi } from "../../lib/payroll";
+import { monad, monadTestnet, PAYCHAD_CONTRACT_ADDRESS, PAYCHAD_USDC } from "../../lib/monad";
+import { erc20Abi, payrollAbi } from "../../lib/payroll";
 import { WalletButton } from "../components/WalletButton";
 
 function shorten(address?: string) {
@@ -17,8 +17,17 @@ export function DashboardClient() {
   const [companyName, setCompanyName] = useState("");
   const [employeeWallet, setEmployeeWallet] = useState("");
   const [salary, setSalary] = useState("");
+  const [fundAmount, setFundAmount] = useState("");
   const [registerHash, setRegisterHash] = useState<`0x${string}`>();
   const [employeeHash, setEmployeeHash] = useState<`0x${string}`>();
+  const [approveHash, setApproveHash] = useState<`0x${string}`>();
+  const [fundHash, setFundHash] = useState<`0x${string}`>();
+  const [runHash, setRunHash] = useState<`0x${string}`>();
+  const [executeHash, setExecuteHash] = useState<`0x${string}`>();
+  const [pendingFundAmount, setPendingFundAmount] = useState<bigint>();
+  const [pendingRunId, setPendingRunId] = useState<bigint>();
+  const [fundStarted, setFundStarted] = useState(false);
+  const [executeStarted, setExecuteStarted] = useState(false);
   const [errorMessage, setErrorMessage] = useState("");
 
   const contractAddress = useMemo(() => {
@@ -26,7 +35,12 @@ export function DashboardClient() {
     return configured && configured.startsWith("0x") ? configured as Address : undefined;
   }, [chainId]);
 
-  const { data: companyId } = useReadContract({
+  const usdcAddress = useMemo(() => {
+    const configured = chainId === monadTestnet.id ? PAYCHAD_USDC.testnet : PAYCHAD_USDC.mainnet;
+    return configured as Address;
+  }, [chainId]);
+
+  const { data: companyId, refetch: refetchCompanyId } = useReadContract({
     address: contractAddress,
     abi: payrollAbi,
     functionName: "companyIdByOwner",
@@ -42,22 +56,89 @@ export function DashboardClient() {
     query: { enabled: Boolean(contractAddress && companyId && companyId > 0n) },
   });
 
+  const { data: walletUsdcBalance, refetch: refetchUsdcBalance } = useReadContract({
+    address: usdcAddress,
+    abi: erc20Abi,
+    functionName: "balanceOf",
+    args: address ? [address] : undefined,
+    query: { enabled: Boolean(address && isConnected) },
+  });
+
+  const { data: activeEmployeeIds, refetch: refetchActiveEmployees } = useReadContract({
+    address: contractAddress,
+    abi: payrollAbi,
+    functionName: "getActiveEmployeeIds",
+    args: companyId && companyId > 0n ? [companyId] : undefined,
+    query: { enabled: Boolean(contractAddress && companyId && companyId > 0n) },
+  });
+
   const { writeContractAsync: registerCompany, isPending: isRegistering } = useWriteContract();
   const { writeContractAsync: addEmployee, isPending: isAddingEmployee } = useWriteContract();
+  const { writeContractAsync: approveUsdc, isPending: isApproving } = useWriteContract();
+  const { writeContractAsync: fundPayroll, isPending: isFunding } = useWriteContract();
+  const { writeContractAsync: createRun, isPending: isCreatingRun } = useWriteContract();
+  const { writeContractAsync: executePayroll, isPending: isExecuting } = useWriteContract();
 
-  const { isLoading: isRegisterPending, isSuccess: isRegisterConfirmed } = useWaitForTransactionReceipt({
-    hash: registerHash,
-    query: { enabled: Boolean(registerHash) },
-  });
-
-  const { isLoading: isEmployeePending, isSuccess: isEmployeeConfirmed } = useWaitForTransactionReceipt({
-    hash: employeeHash,
-    query: { enabled: Boolean(employeeHash) },
-  });
+  const { isLoading: isRegisterPending, isSuccess: isRegisterConfirmed } = useWaitForTransactionReceipt({ hash: registerHash, query: { enabled: Boolean(registerHash) } });
+  const { isLoading: isEmployeePending, isSuccess: isEmployeeConfirmed } = useWaitForTransactionReceipt({ hash: employeeHash, query: { enabled: Boolean(employeeHash) } });
+  const { isLoading: isApprovePending, isSuccess: isApproveConfirmed } = useWaitForTransactionReceipt({ hash: approveHash, query: { enabled: Boolean(approveHash) } });
+  const { isLoading: isFundPending, isSuccess: isFundConfirmed } = useWaitForTransactionReceipt({ hash: fundHash, query: { enabled: Boolean(fundHash) } });
+  const { isLoading: isRunPending, isSuccess: isRunConfirmed } = useWaitForTransactionReceipt({ hash: runHash, query: { enabled: Boolean(runHash) } });
+  const { isLoading: isExecutePending, isSuccess: isExecuteConfirmed } = useWaitForTransactionReceipt({ hash: executeHash, query: { enabled: Boolean(executeHash) } });
 
   useEffect(() => {
-    if (isRegisterConfirmed || isEmployeeConfirmed) void refetchCompany();
-  }, [isRegisterConfirmed, isEmployeeConfirmed, refetchCompany]);
+    if (isRegisterConfirmed) {
+      void refetchCompanyId();
+      void refetchCompany();
+    }
+    if (isEmployeeConfirmed) {
+      void refetchCompany();
+      void refetchActiveEmployees();
+    }
+    if (isFundConfirmed) {
+      void refetchCompany();
+      void refetchUsdcBalance();
+      setFundAmount("");
+      setPendingFundAmount(undefined);
+    }
+    if (isExecuteConfirmed) {
+      void refetchCompany();
+      void refetchActiveEmployees();
+      setPendingRunId(undefined);
+    }
+  }, [isRegisterConfirmed, isEmployeeConfirmed, isFundConfirmed, isExecuteConfirmed, refetchCompanyId, refetchCompany, refetchActiveEmployees, refetchUsdcBalance]);
+
+  useEffect(() => {
+    if (!isApproveConfirmed || !pendingFundAmount || fundStarted || !companyId || !contractAddress) return;
+    setFundStarted(true);
+    void fundPayroll({
+      address: contractAddress,
+      abi: payrollAbi,
+      functionName: "fundPayroll",
+      args: [companyId, pendingFundAmount],
+    }).then(setFundHash).catch((error: unknown) => {
+      setFundStarted(false);
+      setErrorMessage(error instanceof Error ? error.message : "Payroll funding failed.");
+    });
+  }, [isApproveConfirmed, pendingFundAmount, fundStarted, companyId, contractAddress, fundPayroll]);
+
+  useEffect(() => {
+    if (!isRunConfirmed || pendingRunId === undefined || executeStarted || !companyId || !contractAddress) return;
+    if (!activeEmployeeIds || activeEmployeeIds.length === 0) {
+      setErrorMessage("There are no active employees to pay.");
+      return;
+    }
+    setExecuteStarted(true);
+    void executePayroll({
+      address: contractAddress,
+      abi: payrollAbi,
+      functionName: "executePayroll",
+      args: [companyId, pendingRunId, activeEmployeeIds],
+    }).then(setExecuteHash).catch((error: unknown) => {
+      setExecuteStarted(false);
+      setErrorMessage(error instanceof Error ? error.message : "Payroll execution failed.");
+    });
+  }, [isRunConfirmed, pendingRunId, executeStarted, companyId, contractAddress, activeEmployeeIds, executePayroll]);
 
   async function submitCompany(event: FormEvent) {
     event.preventDefault();
@@ -79,15 +160,9 @@ export function DashboardClient() {
     if (!contractAddress) return setErrorMessage("PayChad is not deployed on this network yet.");
     if (!companyId || companyId === 0n) return setErrorMessage("Register a company first.");
     if (!/^0x[a-fA-F0-9]{40}$/.test(employeeWallet)) return setErrorMessage("Enter a valid employee wallet address.");
-    const amount = Number(salary);
-    if (!Number.isFinite(amount) || amount <= 0) return setErrorMessage("Enter a valid monthly salary.");
+    if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(salary) || Number(salary) <= 0) return setErrorMessage("Enter a valid monthly salary.");
     try {
-      const hash = await addEmployee({
-        address: contractAddress,
-        abi: payrollAbi,
-        functionName: "addEmployee",
-        args: [companyId, employeeWallet as Address, parseUnits(salary, 6)],
-      });
+      const hash = await addEmployee({ address: contractAddress, abi: payrollAbi, functionName: "addEmployee", args: [companyId, employeeWallet as Address, parseUnits(salary, 6)] });
       setEmployeeHash(hash);
       setEmployeeWallet("");
       setSalary("");
@@ -96,9 +171,45 @@ export function DashboardClient() {
     }
   }
 
+  async function submitFunding(event: FormEvent) {
+    event.preventDefault();
+    setErrorMessage("");
+    setFundStarted(false);
+    if (!contractAddress) return setErrorMessage("PayChad is not deployed on this network yet.");
+    if (!companyId || companyId === 0n) return setErrorMessage("Register a company first.");
+    if (!/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(fundAmount) || Number(fundAmount) <= 0) return setErrorMessage("Enter a valid USDC amount.");
+    const amount = parseUnits(fundAmount, 6);
+    if (walletUsdcBalance !== undefined && amount > walletUsdcBalance) return setErrorMessage("Your wallet does not have enough USDC.");
+    try {
+      const hash = await approveUsdc({ address: usdcAddress, abi: erc20Abi, functionName: "approve", args: [contractAddress, amount] });
+      setPendingFundAmount(amount);
+      setApproveHash(hash);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "USDC approval failed.");
+    }
+  }
+
+  async function submitPayrollRun() {
+    setErrorMessage("");
+    setExecuteStarted(false);
+    if (!contractAddress) return setErrorMessage("PayChad is not deployed on this network yet.");
+    if (!companyId || companyId === 0n) return setErrorMessage("Register a company first.");
+    if (!activeEmployeeIds || activeEmployeeIds.length === 0) return setErrorMessage("Add at least one active employee first.");
+    if (!company || company.payrollBalance === 0n) return setErrorMessage("Fund payroll before executing a run.");
+    try {
+      const expectedRunId = company.nextRunId;
+      const hash = await createRun({ address: contractAddress, abi: payrollAbi, functionName: "createPayrollRun", args: [companyId] });
+      setPendingRunId(expectedRunId);
+      setRunHash(hash);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Payroll run creation failed.");
+    }
+  }
+
   const isWrongNetwork = isConnected && chainId !== monad.id && chainId !== monadTestnet.id;
   const employeeCount = company?.employeeCount ?? 0n;
   const payrollBalance = company?.payrollBalance ?? 0n;
+  const walletBalance = walletUsdcBalance ?? 0n;
 
   return (
     <>
@@ -120,10 +231,10 @@ export function DashboardClient() {
       ) : (
         <>
           <section className="stat-grid">
-            <article className="stat-card"><small>Payroll balance</small><strong>{Number(payrollBalance) / 1e6} USDC</strong></article>
-            <article className="stat-card"><small>Active employees</small><strong>{employeeCount.toString()}</strong></article>
+            <article className="stat-card"><small>Payroll balance</small><strong>{formatUnits(payrollBalance, 6)} USDC</strong></article>
+            <article className="stat-card"><small>Active employees</small><strong>{activeEmployeeIds?.length ?? employeeCount.toString()}</strong></article>
             <article className="stat-card"><small>Company</small><strong>{company?.name ?? "Not registered"}</strong></article>
-            <article className="stat-card"><small>Employer wallet</small><strong>{shorten(address)}</strong></article>
+            <article className="stat-card"><small>Wallet USDC</small><strong>{formatUnits(walletBalance, 6)}</strong></article>
           </section>
 
           {!companyId || companyId === 0n ? (
@@ -134,13 +245,13 @@ export function DashboardClient() {
                 <input className="text-input" value={companyName} onChange={(event) => setCompanyName(event.target.value)} placeholder="Company name" maxLength={80} />
                 <button className="button button-primary" disabled={isRegistering || isRegisterPending}>{isRegistering ? "Confirm in wallet…" : isRegisterPending ? "Registering…" : "Register company"}</button>
               </form>
-              {registerHash ? <p className="status">Registration transaction: {registerHash}</p> : null}
+              {registerHash ? <p className="status">Registration submitted: {registerHash}</p> : null}
             </section>
           ) : (
             <>
               <section className="panel">
                 <h2>Add an employee</h2>
-                <p>Salary is stored in USDC base units (6 decimals). The employee wallet receives funds directly from the payroll contract during a run.</p>
+                <p>Salary is stored as USDC base units. Payments are sent directly to the employee wallet during execution.</p>
                 <form className="form-row" onSubmit={submitEmployee}>
                   <input className="text-input" value={employeeWallet} onChange={(event) => setEmployeeWallet(event.target.value)} placeholder="Employee wallet address" />
                   <input className="text-input" value={salary} onChange={(event) => setSalary(event.target.value)} placeholder="Monthly salary (USDC)" inputMode="decimal" />
@@ -148,9 +259,26 @@ export function DashboardClient() {
                 </form>
                 {employeeHash ? <p className="status">Employee transaction: {employeeHash}</p> : null}
               </section>
+
               <section className="panel">
-                <h2>Next: fund and execute</h2>
-                <p>USDC approval, payroll funding, payroll-run creation, and batched payouts are the next connected workflow. No funding balance is simulated here.</p>
+                <h2>Fund payroll</h2>
+                <p>Approval is a separate ERC-20 transaction. Funding starts only after the approval is confirmed.</p>
+                <form className="form-row" onSubmit={submitFunding}>
+                  <input className="text-input" value={fundAmount} onChange={(event) => setFundAmount(event.target.value)} placeholder="USDC amount" inputMode="decimal" />
+                  <button className="button button-primary" disabled={isApproving || isApprovePending || isFunding || isFundPending}>{isApproving ? "Approve in wallet…" : isApprovePending ? "Approval pending…" : isFunding ? "Fund in wallet…" : isFundPending ? "Funding pending…" : "Approve & fund"}</button>
+                </form>
+                {approveHash ? <p className="status">Approval: {approveHash}</p> : null}
+                {fundHash ? <p className="status">Funding: {fundHash}</p> : null}
+              </section>
+
+              <section className="panel">
+                <h2>Execute payroll</h2>
+                <p>{activeEmployeeIds?.length ?? 0} active employee{(activeEmployeeIds?.length ?? 0) === 1 ? "" : "s"} will be included. The run is created first, then execution is submitted only after confirmation.</p>
+                <button className="button button-primary" disabled={isCreatingRun || isRunPending || isExecuting || isExecutePending || !activeEmployeeIds?.length} onClick={submitPayrollRun}>
+                  {isCreatingRun ? "Confirm run in wallet…" : isRunPending ? "Run creation pending…" : isExecuting ? "Confirm payroll in wallet…" : isExecutePending ? "Payroll execution pending…" : "Create & execute payroll"}
+                </button>
+                {runHash ? <p className="status">Run creation: {runHash}</p> : null}
+                {executeHash ? <p className="status">Payroll execution: {executeHash}</p> : null}
               </section>
             </>
           )}
