@@ -63,37 +63,37 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
     await persistPayChadEvents(db, events);
     for (const event of events) expect(await persistPayChadEvent(db, event)).toBe("replayed");
 
-    const [{ count: eventCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: companyCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM companies WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: employeeCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM employees WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: runCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM payroll_runs WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: paymentCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM payroll_payments WHERE chain_id = ${CHAIN_ID}`;
+    const [{ count: eventCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID.toString()}`;
+    const [{ count: companyCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM companies WHERE chain_id = ${CHAIN_ID.toString()}`;
+    const [{ count: employeeCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM employees WHERE chain_id = ${CHAIN_ID.toString()}`;
+    const [{ count: runCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM payroll_runs WHERE chain_id = ${CHAIN_ID.toString()}`;
+    const [{ count: paymentCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM payroll_payments WHERE chain_id = ${CHAIN_ID.toString()}`;
     expect(eventCount).toBe(8n); expect(companyCount).toBe(1n); expect(employeeCount).toBe(1n); expect(runCount).toBe(1n); expect(paymentCount).toBe(1n);
 
-    const [payment] = await db<{ amount: string }[]>`SELECT amount_base_units::text AS amount FROM payroll_payments WHERE chain_id = ${CHAIN_ID}`;
+    const [payment] = await db<{ amount: string }[]>`SELECT amount_base_units::text AS amount FROM payroll_payments WHERE chain_id = ${CHAIN_ID.toString()}`;
     expect(payment?.amount).toBe("250000000");
-    const [funded] = await db<{ event_data: string }[]>`SELECT event_data::text AS event_data FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND event_name = 'PayrollFunded'`;
+    const [funded] = await db<{ event_data: string }[]>`SELECT event_data::text AS event_data FROM indexed_events WHERE chain_id = ${CHAIN_ID.toString()} AND event_name = 'PayrollFunded'`;
     expect(funded?.event_data).toContain('"amount":"1000000000"');
   });
 
   it("handles multiple logs from one transaction without collision", async () => {
     const events = [decodePayChadEvent(companyEvent(20n, TX(20), 20)), decodePayChadEvent(employeeEvent(21n, TX(20), 20))];
     await persistPayChadEvents(db, events);
-    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND transaction_hash = ${TX(20)}`;
+    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID.toString()} AND transaction_hash = ${TX(20)}`;
     expect(count).toBe(2n);
   });
 
   it("rolls back the indexed event when a prerequisite projection fails", async () => {
     const invalid = decodePayChadEvent(statusEvent(true, 30n, TX(30), 30));
     await expect(persistPayChadEvent(db, invalid)).rejects.toThrow("prerequisite employee");
-    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 30`;
+    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID.toString()} AND log_index = 30`;
     expect(count).toBe(0n);
   });
 
   it("fails closed for out-of-order payroll payment prerequisites", async () => {
     const payment = decodePayChadEvent(paymentEvent(40n, TX(40), 40));
     await expect(persistPayChadEvent(db, payment)).rejects.toThrow();
-    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 40`;
+    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID.toString()} AND log_index = 40`;
     expect(count).toBe(0n);
   });
 });
