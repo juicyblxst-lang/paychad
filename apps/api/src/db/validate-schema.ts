@@ -27,7 +27,12 @@ async function expectConstraintFailure(
     if (error instanceof Error && error.message === EXPECTED_FAILURE) {
       throw new Error(`Expected constraint failure: ${label}`);
     }
-    return;
+    const code = typeof error === "object" && error !== null && "code" in error
+      ? String((error as { code: unknown }).code)
+      : "";
+    if (!code.startsWith("23")) {
+      throw error;
+    }
   }
 }
 
