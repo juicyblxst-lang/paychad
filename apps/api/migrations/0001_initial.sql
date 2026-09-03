@@ -1,6 +1,6 @@
 CREATE TABLE companies (
     chain_id BIGINT NOT NULL CHECK (chain_id > 0),
-    company_id BIGINT NOT NULL CHECK (company_id > 0),
+    company_id NUMERIC(78, 0) NOT NULL CHECK (company_id > 0),
     owner_address TEXT NOT NULL CHECK (owner_address ~ '^0x[0-9a-fA-F]{40}$'),
     name TEXT NOT NULL,
     created_at TIMESTAMPTZ NOT NULL,
@@ -10,7 +10,7 @@ CREATE TABLE companies (
 
 CREATE TABLE employees (
     chain_id BIGINT NOT NULL CHECK (chain_id > 0),
-    company_id BIGINT NOT NULL,
+    company_id NUMERIC(78, 0) NOT NULL,
     employee_id BIGINT NOT NULL CHECK (employee_id > 0),
     wallet_address TEXT NOT NULL CHECK (wallet_address ~ '^0x[0-9a-fA-F]{40}$'),
     salary_base_units NUMERIC(78, 0) NOT NULL CHECK (salary_base_units > 0),
@@ -60,7 +60,7 @@ CREATE INDEX indexed_events_contract_block_idx
 
 CREATE TABLE payroll_runs (
     chain_id BIGINT NOT NULL CHECK (chain_id > 0),
-    company_id BIGINT NOT NULL,
+    company_id NUMERIC(78, 0) NOT NULL,
     run_id BIGINT NOT NULL CHECK (run_id > 0),
     created_at TIMESTAMPTZ NOT NULL,
     completed_at TIMESTAMPTZ,
@@ -84,7 +84,7 @@ CREATE INDEX payroll_runs_company_created_idx
 
 CREATE TABLE payroll_payments (
     chain_id BIGINT NOT NULL CHECK (chain_id > 0),
-    company_id BIGINT NOT NULL,
+    company_id NUMERIC(78, 0) NOT NULL,
     run_id BIGINT NOT NULL,
     employee_id BIGINT NOT NULL,
     recipient_address TEXT NOT NULL CHECK (recipient_address ~ '^0x[0-9a-fA-F]{40}$'),
