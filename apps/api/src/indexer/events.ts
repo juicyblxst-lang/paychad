@@ -88,8 +88,9 @@ export function decodePayChadEvent(log: RawBlockchainLog): PayChadDomainEvent {
     case "PayrollPayment": return { ...base, kind: "PayrollPayment", companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), recipient: asAddress(args.recipient, "recipient"), amount: asPositiveBigInt(args.amount, "amount") };
     case "PayrollRunCompleted": return { ...base, kind: "PayrollRunCompleted", companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId"), totalPaid: asPositiveBigInt(args.totalPaid, "totalPaid"), employeeCount: asPositiveBigInt(args.employeeCount, "employeeCount") };
     case "PayrollWithdrawn": return { ...base, kind: "PayrollWithdrawn", companyId: asBigInt(args.companyId, "companyId"), recipient: asAddress(args.recipient, "recipient"), amount: asPositiveBigInt(args.amount, "amount") };
-    default: throw new Error(`Unsupported PayChadPayroll event: ${String(decoded.eventName)}`);
   }
+
+  throw new Error("Unsupported PayChadPayroll event log");
 }
 
 function asBigInt(value: unknown, field: string): bigint { if (typeof value !== "bigint") throw new Error(`Invalid decoded ${field}`); return value; }
