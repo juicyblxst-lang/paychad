@@ -100,6 +100,7 @@ export function createDatabaseCheckpointStore(db: Database): CheckpointStore {
         SET last_processed_block = EXCLUDED.last_processed_block,
             last_processed_block_hash = EXCLUDED.last_processed_block_hash,
             updated_at = now()
+        WHERE indexer_checkpoints.last_processed_block <= EXCLUDED.last_processed_block
       `;
     },
   };
