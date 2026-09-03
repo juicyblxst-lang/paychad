@@ -210,8 +210,8 @@ describe("scanner", () => {
     const rpc = new FakeRpc();
     const checkpoints = new FakeCheckpointStore();
     checkpoints.checkpoint = { chainId: CHAIN_ID, contractAddress: CONTRACT, lastProcessedBlock: 19n, lastProcessedBlockHash: HASH("13") };
-    let resolveSlow: () => void;
-    let releaseSlow: () => void;
+    let resolveSlow: () => void = () => {};
+    let releaseSlow: () => void = () => {};
     const slowStarted = new Promise<void>((resolve) => { resolveSlow = resolve; });
     const slowGate = new Promise<void>((resolve) => { releaseSlow = resolve; });
     const slowPersister: EventPersister = { persist: async () => { resolveSlow(); await slowGate; } };
