@@ -7,8 +7,6 @@ import { monad, monadTestnet, PAYCHAD_CONTRACT_ADDRESS } from "../../lib/monad";
 import { payrollAbi } from "../../lib/payroll";
 import { WalletButton } from "../components/WalletButton";
 
-const EMPTY = "" as Address;
-
 function shorten(address?: string) {
   return address ? `${address.slice(0, 6)}…${address.slice(-4)}` : "—";
 }
@@ -99,8 +97,8 @@ export function DashboardClient() {
   }
 
   const isWrongNetwork = isConnected && chainId !== monad.id && chainId !== monadTestnet.id;
-  const employeeCount = company?.[2] ?? 0n;
-  const payrollBalance = company?.[4] ?? 0n;
+  const employeeCount = company?.employeeCount ?? 0n;
+  const payrollBalance = company?.payrollBalance ?? 0n;
 
   return (
     <>
@@ -124,7 +122,7 @@ export function DashboardClient() {
           <section className="stat-grid">
             <article className="stat-card"><small>Payroll balance</small><strong>{Number(payrollBalance) / 1e6} USDC</strong></article>
             <article className="stat-card"><small>Active employees</small><strong>{employeeCount.toString()}</strong></article>
-            <article className="stat-card"><small>Company</small><strong>{company?.[1] ?? "Not registered"}</strong></article>
+            <article className="stat-card"><small>Company</small><strong>{company?.name ?? "Not registered"}</strong></article>
             <article className="stat-card"><small>Employer wallet</small><strong>{shorten(address)}</strong></article>
           </section>
 
@@ -161,7 +159,6 @@ export function DashboardClient() {
 
       {errorMessage ? <p className="status inline-error">{errorMessage}</p> : null}
       <p className="status">Network: {chainId === monad.id ? "Monad Mainnet" : chainId === monadTestnet.id ? "Monad Testnet" : `Chain ${chainId}`}</p>
-      <span aria-hidden="true" style={{ display: "none" }}>{EMPTY}</span>
     </>
   );
 }
