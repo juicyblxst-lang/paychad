@@ -2,6 +2,12 @@ import postgres from "postgres";
 
 const DEFAULT_MAX_CONNECTIONS = 5;
 
+const postgresTypes = {
+  bigint: postgres.BigInt,
+};
+
+type DatabaseTypes = typeof postgresTypes;
+
 export function getDatabaseUrl(): string {
   const url = process.env.DATABASE_URL?.trim();
   if (!url) {
@@ -11,9 +17,10 @@ export function getDatabaseUrl(): string {
 }
 
 export function createDatabase() {
-  return postgres(getDatabaseUrl(), {
+  return postgres<DatabaseTypes>(getDatabaseUrl(), {
     max: DEFAULT_MAX_CONNECTIONS,
     prepare: true,
+    types: postgresTypes,
     onnotice: () => undefined,
   });
 }
