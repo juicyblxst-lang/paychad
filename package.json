@@ -1,0 +1,13 @@
+{
+  "name": "paychad",
+  "private": true,
+  "packageManager": "pnpm@10.15.1",
+  "engines": { "node": ">=20.9.0" },
+  "scripts": {
+    "dev": "pnpm --filter @paychad/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "test": "pnpm -r test"
+  }
+}
