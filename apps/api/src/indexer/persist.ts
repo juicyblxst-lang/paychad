@@ -3,6 +3,8 @@ import type { PayChadDomainEvent } from "./events";
 
 export type PersistResult = "inserted" | "replayed";
 
+type JsonValue = null | string | number | boolean | readonly JsonValue[] | { readonly [key: string]: JsonValue | undefined };
+
 export async function persistPayChadEvent(db: Database, event: PayChadDomainEvent): Promise<PersistResult> {
   return db.begin(async (transaction) => persistPayChadEventInTransaction(transaction as unknown as Database, event));
 }
@@ -114,7 +116,9 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     case "PayrollRunCompleted": {
       const result = await db`
         UPDATE payroll_runs
-        SET completed_at = ${observedAt}, total_paid_base_units = ${event.totalPaid.toString()}, employee_count = ${event.employeeCount.toString()}
+        SET completed_at = ${observedAt},
+            total_paid_base_units = COALESCE(total_paid_base_units, 0) + ${event.totalPaid.toString()},
+            employee_count = COALESCE(employee_count, 0) + ${event.employeeCount.toString()}
         WHERE chain_id = ${event.chainId.toString()}
           AND company_id = ${event.companyId.toString()}
           AND run_id = ${event.runId.toString()}
@@ -135,7 +139,7 @@ function compareEventOrder(a: PayChadDomainEvent, b: PayChadDomainEvent): number
   return 0;
 }
 
-function serializeEvent(event: PayChadDomainEvent): Record<string, unknown> {
+function serializeEvent(event: PayChadDomainEvent): JsonValue {
   const { chainId, blockNumber, blockHash, transactionHash, transactionIndex, logIndex, contractAddress, kind, ...args } = event;
   return {
     chainId: chainId.toString(),
@@ -150,9 +154,13 @@ function serializeEvent(event: PayChadDomainEvent): Record<string, unknown> {
   };
 }
 
-function stringifyBigInts(value: unknown): unknown {
+function stringifyBigInts(value: unknown): JsonValue {
+  if (value === null) return null;
   if (typeof value === "bigint") return value.toString();
+  if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") return value;
   if (Array.isArray(value)) return value.map(stringifyBigInts);
-  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
-  return value;
+  if (typeof value === "object") {
+    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
+  }
+  throw new Error("Unsupported event payload value");
 }
