@@ -46,33 +46,23 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
   `;
 
   if (inserted.length === 0) {
-    const [existing] = await db<{
-      block_hash: string;
-      contract_address: string;
-      event_name: string;
-      event_data: unknown;
-    }[]>`
-      SELECT block_hash, contract_address, event_name, event_data
+    const [matching] = await db<{ ok: boolean }[]>`
+      SELECT true AS ok
       FROM indexed_events
       WHERE chain_id = ${event.chainId}
         AND block_number = ${event.blockNumber}
         AND transaction_hash = ${event.transactionHash}
         AND log_index = ${event.logIndex}
+        AND block_hash = ${event.blockHash}
+        AND contract_address = ${event.contractAddress}
+        AND event_name = ${event.kind}
+        AND event_data = ${JSON.stringify(eventData)}::jsonb
     `;
-    if (!existing) throw new Error("Event conflict disappeared before replay verification");
-    if (
-      existing.block_hash.toLowerCase() !== event.blockHash.toLowerCase()
-      || existing.contract_address.toLowerCase() !== event.contractAddress.toLowerCase()
-      || existing.event_name !== event.kind
-      || canonicalJson(existing.event_data) !== canonicalJson(eventData)
-    ) {
-      throw new Error("Conflicting event data for an existing blockchain event identity");
-    }
+    if (!matching) throw new Error("Conflicting event data for an existing blockchain event identity");
     return "replayed";
   }
 
   const observedAt = new Date();
-
   switch (event.kind) {
     case "CompanyRegistered":
       await db`
@@ -80,7 +70,6 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
         VALUES (${event.chainId}, ${event.companyId}, ${event.owner}, ${event.name}, ${observedAt})
       `;
       break;
-
     case "EmployeeAdded":
       await db`
         INSERT INTO employees (
@@ -90,7 +79,6 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
         )
       `;
       break;
-
     case "EmployeeStatusChanged": {
       const result = await db`
         UPDATE employees
@@ -102,20 +90,16 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
       if (result.count !== 1) throw new Error("EmployeeStatusChanged prerequisite employee is missing");
       break;
     }
-
     case "PayrollFunded":
     case "PayrollWithdrawn":
-      // These events remain durably represented by indexed_events. No off-chain
-      // payroll balance is maintained because Monad is the financial authority.
+      // Funding and withdrawal remain event projections only. Monad owns the balance.
       break;
-
     case "PayrollRunCreated":
       await db`
         INSERT INTO payroll_runs (chain_id, company_id, run_id, created_at)
         VALUES (${event.chainId}, ${event.companyId}, ${event.runId}, ${observedAt})
       `;
       break;
-
     case "PayrollPayment":
       await db`
         INSERT INTO payroll_payments (
@@ -127,7 +111,6 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
         )
       `;
       break;
-
     case "PayrollRunCompleted": {
       const result = await db`
         UPDATE payroll_runs
@@ -140,7 +123,6 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
       break;
     }
   }
-
   return "inserted";
 }
 
@@ -171,16 +153,6 @@ function serializeEvent(event: PayChadDomainEvent): Record<string, unknown> {
 function stringifyBigInts(value: unknown): unknown {
   if (typeof value === "bigint") return value.toString();
   if (Array.isArray(value)) return value.map(stringifyBigInts);
-  if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
-  }
+  if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
   return value;
-}
-
-function canonicalJson(value: unknown): string {
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  if (value && typeof value === "object") {
-    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
-  }
-  return JSON.stringify(value);
 }
