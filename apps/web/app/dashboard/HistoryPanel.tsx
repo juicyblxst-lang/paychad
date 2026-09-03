@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useAccount, useChainId, useReadContract } from "wagmi";
+import { Address, useAccount, useChainId, useReadContract } from "wagmi";
 import { monadTestnet, PAYCHAD_CONTRACT_ADDRESS } from "../../lib/monad";
 import { payrollAbi } from "../../lib/payroll";
 
@@ -42,9 +42,10 @@ export function HistoryPanel() {
   const [runs, setRuns] = useState<PayrollRun[]>([]);
   const [payments, setPayments] = useState<Payment[]>([]);
   const [error, setError] = useState("");
-  const contractAddress = chainId === monadTestnet.id ? PAYCHAD_CONTRACT_ADDRESS.testnet : PAYCHAD_CONTRACT_ADDRESS.mainnet;
+  const configuredContract = chainId === monadTestnet.id ? PAYCHAD_CONTRACT_ADDRESS.testnet : PAYCHAD_CONTRACT_ADDRESS.mainnet;
+  const contractAddress = configuredContract && configuredContract.startsWith("0x") ? configuredContract as Address : undefined;
   const { data: companyId } = useReadContract({
-    address: contractAddress && contractAddress.startsWith("0x") ? contractAddress : undefined,
+    address: contractAddress,
     abi: payrollAbi,
     functionName: "companyIdByOwner",
     args: address ? [address] : undefined,
