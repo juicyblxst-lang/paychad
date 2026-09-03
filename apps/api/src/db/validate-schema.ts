@@ -1,5 +1,5 @@
 import postgres from "postgres";
-import { getDatabaseUrl } from "./database";
+import { getDatabaseUrl, type Database } from "./database";
 
 const MAX_UINT256 = "115792089237316195423570985008687907853269984665640564039457584007913129639935";
 const OWNER = "0x1111111111111111111111111111111111111111";
@@ -23,32 +23,33 @@ export async function validateSchema(): Promise<void> {
 
   try {
     await sql.begin(async (tx) => {
-      const [migration] = await tx<{ migration_id: string }[]>`
+      const db = tx as unknown as Database;
+      const [migration] = await db<{ migration_id: string }[]>`
         SELECT migration_id
         FROM schema_migrations
         WHERE migration_id = '0001_initial'
       `;
       if (!migration) throw new Error("0001_initial migration is not recorded");
 
-      await tx`
+      await db`
         INSERT INTO companies (chain_id, company_id, owner_address, name, created_at)
         VALUES (143, 1, ${OWNER}, 'Schema Test', now())
       `;
       await expectConstraintFailure(
-        () => tx`
+        () => db`
           INSERT INTO companies (chain_id, company_id, owner_address, name, created_at)
           VALUES (143, 2, ${OWNER}, 'Duplicate Owner', now())
         `,
         "company owner uniqueness",
       );
 
-      await tx`
+      await db`
         INSERT INTO employees (
           chain_id, company_id, employee_id, wallet_address, salary_base_units, active, created_at, updated_at
         ) VALUES (143, 1, 1, ${EMPLOYEE}, ${MAX_UINT256}, true, now(), now())
       `;
       await expectConstraintFailure(
-        () => tx`
+        () => db`
           INSERT INTO employees (
             chain_id, company_id, employee_id, wallet_address, salary_base_units, active, created_at, updated_at
           ) VALUES (143, 1, 1, ${EMPLOYEE}, 1, true, now(), now())
@@ -56,19 +57,19 @@ export async function validateSchema(): Promise<void> {
         "employee primary key uniqueness",
       );
 
-      await tx`
+      await db`
         INSERT INTO blockchain_transactions (
           chain_id, transaction_hash, block_number, block_hash, transaction_index, confirmed_at
         ) VALUES (143, ${TX}, 100, ${BLOCK}, 0, now())
       `;
 
-      await tx`
+      await db`
         INSERT INTO indexed_events (
           chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name
         ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment')
       `;
       await expectConstraintFailure(
-        () => tx`
+        () => db`
           INSERT INTO indexed_events (
             chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name
           ) VALUES (143, 100, ${TX}, 0, ${BLOCK}, ${CONTRACT}, 'PayrollPayment')
@@ -76,18 +77,18 @@ export async function validateSchema(): Promise<void> {
         "blockchain event identity uniqueness",
       );
 
-      await tx`
+      await db`
         INSERT INTO payroll_runs (chain_id, company_id, run_id, created_at)
         VALUES (143, 1, 1, now())
       `;
-      await tx`
+      await db`
         INSERT INTO payroll_payments (
           chain_id, company_id, run_id, employee_id, recipient_address, amount_base_units,
           block_number, transaction_hash, log_index, paid_at
         ) VALUES (143, 1, 1, 1, ${EMPLOYEE}, ${MAX_UINT256}, 100, ${TX}, 0, now())
       `;
       await expectConstraintFailure(
-        () => tx`
+        () => db`
           INSERT INTO payroll_payments (
             chain_id, company_id, run_id, employee_id, recipient_address, amount_base_units,
             block_number, transaction_hash, log_index, paid_at
@@ -96,12 +97,12 @@ export async function validateSchema(): Promise<void> {
         "payroll payment uniqueness",
       );
 
-      await tx`
+      await db`
         INSERT INTO idempotency_keys (idempotency_key, operation, request_hash, status)
         VALUES ('schema-test-key', 'schema-test', ${REQUEST_HASH}, 'pending')
       `;
       await expectConstraintFailure(
-        () => tx`
+        () => db`
           INSERT INTO idempotency_keys (idempotency_key, operation, request_hash, status)
           VALUES ('schema-test-key', 'schema-test', ${REQUEST_HASH}, 'pending')
         `,
@@ -109,14 +110,14 @@ export async function validateSchema(): Promise<void> {
       );
 
       await expectConstraintFailure(
-        () => tx`
+        () => db`
           INSERT INTO payroll_runs (chain_id, company_id, run_id, created_at)
           VALUES (143, 999, 2, now())
         `,
         "company foreign key",
       );
 
-      const [salary] = await tx<{ salary_base_units: string }[]>`
+      const [salary] = await db<{ salary_base_units: string }[]>`
         SELECT salary_base_units::text
         FROM employees
         WHERE chain_id = 143 AND company_id = 1 AND employee_id = 1
@@ -125,20 +126,20 @@ export async function validateSchema(): Promise<void> {
         throw new Error("Exact uint256-sized monetary value was not preserved");
       }
 
-      await tx`DELETE FROM idempotency_keys WHERE idempotency_key = 'schema-test-key'`;
-      await tx`DELETE FROM payroll_payments WHERE chain_id = 143 AND company_id = 1 AND run_id = 1 AND employee_id = 1`;
-      await tx`DELETE FROM payroll_runs WHERE chain_id = 143 AND company_id = 1 AND run_id = 1`;
-      await tx`DELETE FROM indexed_events WHERE chain_id = 143 AND block_number = 100 AND transaction_hash = ${TX} AND log_index = 0`;
-      await tx`DELETE FROM blockchain_transactions WHERE chain_id = 143 AND transaction_hash = ${TX}`;
-      await tx`DELETE FROM employees WHERE chain_id = 143 AND company_id = 1 AND employee_id = 1`;
-      await tx`DELETE FROM companies WHERE chain_id = 143 AND company_id = 1`;
+      await db`DELETE FROM idempotency_keys WHERE idempotency_key = 'schema-test-key'`;
+      await db`DELETE FROM payroll_payments WHERE chain_id = 143 AND company_id = 1 AND run_id = 1 AND employee_id = 1`;
+      await db`DELETE FROM payroll_runs WHERE chain_id = 143 AND company_id = 1 AND run_id = 1`;
+      await db`DELETE FROM indexed_events WHERE chain_id = 143 AND block_number = 100 AND transaction_hash = ${TX} AND log_index = 0`;
+      await db`DELETE FROM blockchain_transactions WHERE chain_id = 143 AND transaction_hash = ${TX}`;
+      await db`DELETE FROM employees WHERE chain_id = 143 AND company_id = 1 AND employee_id = 1`;
+      await db`DELETE FROM companies WHERE chain_id = 143 AND company_id = 1`;
     });
   } finally {
     await sql.end({ timeout: 5 });
   }
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (process.argv[1]?.endsWith("/validate-schema.ts") || process.argv[1]?.endsWith("/validate-schema.js")) {
   validateSchema().catch((error) => {
     console.error(error);
     process.exitCode = 1;
