@@ -6,13 +6,14 @@ import { ApiError, registerApiRoutes } from "./routes";
 export function buildServer(db?: Database) {
   const app = Fastify({ logger: true });
   app.register(cors, { origin: true });
-  app.get("/health", async (_request, reply) => {
-    if (!db) return reply.code(503).send({ service: "paychad-api", status: "degraded", code: "CONFIGURATION_ERROR" });
+  app.get("/health", async () => ({ service: "paychad-api", status: db ? "ok" : "degraded" }));
+  app.get("/ready", async (_request, reply) => {
+    if (!db) return reply.code(503).send({ service: "paychad-api", status: "not_ready", code: "CONFIGURATION_ERROR" });
     try {
       await db`SELECT 1`;
-      return { service: "paychad-api", status: "ok", database: "ok" };
+      return { service: "paychad-api", status: "ready", database: "ok" };
     } catch {
-      return reply.code(503).send({ service: "paychad-api", status: "degraded", code: "DATABASE_ERROR" });
+      return reply.code(503).send({ service: "paychad-api", status: "not_ready", code: "DATABASE_ERROR" });
     }
   });
   registerApiRoutes(app, db);
