@@ -23,7 +23,7 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     INSERT INTO blockchain_transactions (
       chain_id, transaction_hash, block_number, block_hash, transaction_index, confirmed_at
     ) VALUES (
-      ${event.chainId}, ${event.transactionHash}, ${event.blockNumber}, ${event.blockHash}, ${event.transactionIndex}, now()
+      ${event.chainId.toString()}, ${event.transactionHash}, ${event.blockNumber.toString()}, ${event.blockHash}, ${event.transactionIndex}, now()
     )
     ON CONFLICT (chain_id, transaction_hash) DO NOTHING
   `;
@@ -38,8 +38,8 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     INSERT INTO indexed_events (
       chain_id, block_number, transaction_hash, log_index, block_hash, contract_address, event_name, event_data
     ) VALUES (
-      ${event.chainId}, ${event.blockNumber}, ${event.transactionHash}, ${event.logIndex},
-      ${event.blockHash}, ${event.contractAddress}, ${event.kind}, ${eventData}::jsonb
+      ${event.chainId.toString()}, ${event.blockNumber.toString()}, ${event.transactionHash}, ${event.logIndex.toString()},
+      ${event.blockHash}, ${event.contractAddress}, ${event.kind}, ${db.json(eventData)}
     )
     ON CONFLICT (chain_id, block_number, transaction_hash, log_index) DO NOTHING
     RETURNING chain_id, block_number, transaction_hash, log_index
@@ -49,14 +49,14 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     const [matching] = await db<{ ok: boolean }[]>`
       SELECT true AS ok
       FROM indexed_events
-      WHERE chain_id = ${event.chainId}
-        AND block_number = ${event.blockNumber}
+      WHERE chain_id = ${event.chainId.toString()}
+        AND block_number = ${event.blockNumber.toString()}
         AND transaction_hash = ${event.transactionHash}
-        AND log_index = ${event.logIndex}
+        AND log_index = ${event.logIndex.toString()}
         AND block_hash = ${event.blockHash}
         AND contract_address = ${event.contractAddress}
         AND event_name = ${event.kind}
-        AND event_data = ${eventData}::jsonb
+        AND event_data = ${db.json(eventData)}
     `;
     if (!matching) throw new Error("Conflicting event data for an existing blockchain event identity");
     return "replayed";
@@ -67,7 +67,7 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     case "CompanyRegistered":
       await db`
         INSERT INTO companies (chain_id, company_id, owner_address, name, created_at)
-        VALUES (${event.chainId}, ${event.companyId}, ${event.owner}, ${event.name}, ${observedAt})
+        VALUES (${event.chainId.toString()}, ${event.companyId.toString()}, ${event.owner}, ${event.name}, ${observedAt})
       `;
       break;
     case "EmployeeAdded":
@@ -75,7 +75,7 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
         INSERT INTO employees (
           chain_id, company_id, employee_id, wallet_address, salary_base_units, active, created_at, updated_at
         ) VALUES (
-          ${event.chainId}, ${event.companyId}, ${event.employeeId}, ${event.wallet}, ${event.salary}, true, ${observedAt}, ${observedAt}
+          ${event.chainId.toString()}, ${event.companyId.toString()}, ${event.employeeId.toString()}, ${event.wallet}, ${event.salary.toString()}, true, ${observedAt}, ${observedAt}
         )
       `;
       break;
@@ -83,9 +83,9 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
       const result = await db`
         UPDATE employees
         SET active = ${event.active}, updated_at = ${observedAt}
-        WHERE chain_id = ${event.chainId}
-          AND company_id = ${event.companyId}
-          AND employee_id = ${event.employeeId}
+        WHERE chain_id = ${event.chainId.toString()}
+          AND company_id = ${event.companyId.toString()}
+          AND employee_id = ${event.employeeId.toString()}
       `;
       if (result.count !== 1) throw new Error("EmployeeStatusChanged prerequisite employee is missing");
       break;
@@ -97,7 +97,7 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
     case "PayrollRunCreated":
       await db`
         INSERT INTO payroll_runs (chain_id, company_id, run_id, created_at)
-        VALUES (${event.chainId}, ${event.companyId}, ${event.runId}, ${observedAt})
+        VALUES (${event.chainId.toString()}, ${event.companyId.toString()}, ${event.runId.toString()}, ${observedAt})
       `;
       break;
     case "PayrollPayment":
@@ -106,18 +106,18 @@ async function persistPayChadEventInTransaction(db: Database, event: PayChadDoma
           chain_id, company_id, run_id, employee_id, recipient_address, amount_base_units,
           block_number, transaction_hash, log_index, paid_at
         ) VALUES (
-          ${event.chainId}, ${event.companyId}, ${event.runId}, ${event.employeeId}, ${event.recipient}, ${event.amount},
-          ${event.blockNumber}, ${event.transactionHash}, ${event.logIndex}, ${observedAt}
+          ${event.chainId.toString()}, ${event.companyId.toString()}, ${event.runId.toString()}, ${event.employeeId.toString()}, ${event.recipient}, ${event.amount.toString()},
+          ${event.blockNumber.toString()}, ${event.transactionHash}, ${event.logIndex.toString()}, ${observedAt}
         )
       `;
       break;
     case "PayrollRunCompleted": {
       const result = await db`
         UPDATE payroll_runs
-        SET completed_at = ${observedAt}, total_paid_base_units = ${event.totalPaid}, employee_count = ${event.employeeCount}
-        WHERE chain_id = ${event.chainId}
-          AND company_id = ${event.companyId}
-          AND run_id = ${event.runId}
+        SET completed_at = ${observedAt}, total_paid_base_units = ${event.totalPaid.toString()}, employee_count = ${event.employeeCount.toString()}
+        WHERE chain_id = ${event.chainId.toString()}
+          AND company_id = ${event.companyId.toString()}
+          AND run_id = ${event.runId.toString()}
       `;
       if (result.count !== 1) throw new Error("PayrollRunCompleted prerequisite payroll run is missing");
       break;
