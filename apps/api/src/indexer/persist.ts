@@ -7,6 +7,15 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
   if (!event.blockHash) throw new Error("Block hash is required for persistence");
   if (event.transactionIndex == null) throw new Error("Transaction index is required for persistence");
 
+  await db`
+    INSERT INTO blockchain_transactions (
+      chain_id, transaction_hash, block_number, block_hash, transaction_index, confirmed_at
+    ) VALUES (
+      ${event.chainId}, ${event.transactionHash}, ${event.blockNumber}, ${event.blockHash}, ${event.transactionIndex}, now()
+    )
+    ON CONFLICT (chain_id, transaction_hash) DO NOTHING
+  `;
+
   const eventData = serializeEvent(event);
   const inserted = await db<{
     chain_id: string;
@@ -49,15 +58,6 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
     }
     return "replayed";
   }
-
-  await db`
-    INSERT INTO blockchain_transactions (
-      chain_id, transaction_hash, block_number, block_hash, transaction_index, confirmed_at
-    ) VALUES (
-      ${event.chainId}, ${event.transactionHash}, ${event.blockNumber}, ${event.blockHash}, ${event.transactionIndex}, now()
-    )
-    ON CONFLICT (chain_id, transaction_hash) DO NOTHING
-  `;
 
   const observedAt = new Date();
 
