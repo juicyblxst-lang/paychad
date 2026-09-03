@@ -9,20 +9,32 @@ permissions:
 
 jobs:
   lockfile:
-    if: ${{ !hashFiles('pnpm-lock.yaml') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - id: check-lockfile
+        name: Check for canonical lockfile
+        shell: bash
+        run: |
+          if [[ -f pnpm-lock.yaml ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: pnpm/action-setup@v4
+        if: steps.check-lockfile.outputs.exists == 'false'
         with:
           version: 10.15.1
       - uses: actions/setup-node@v4
+        if: steps.check-lockfile.outputs.exists == 'false'
         with:
           node-version: 20
           cache: pnpm
       - name: Generate canonical workspace lockfile
+        if: steps.check-lockfile.outputs.exists == 'false'
         run: pnpm install --lockfile-only
       - name: Commit lockfile
+        if: steps.check-lockfile.outputs.exists == 'false'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
