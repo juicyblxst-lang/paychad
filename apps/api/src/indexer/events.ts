@@ -1,4 +1,4 @@
-import { decodeEventLog, parseAbi, type Address, type Hex } from "viem";
+import { decodeEventLog, parseAbi, type Abi, type Address, type Hex } from "viem";
 
 export const payChadPayrollEvents = parseAbi([
   "event CompanyRegistered(uint256 indexed companyId, address indexed owner, string name)",
@@ -52,9 +52,9 @@ export function decodePayChadEvent(log: RawBlockchainLog): PayChadDomainEvent {
   if (!/^0x[0-9a-fA-F]{40}$/.test(log.address)) throw new Error("Invalid contract address");
 
   const decoded = decodeEventLog({
-    abi: payChadPayrollEvents,
+    abi: payChadPayrollEvents as Abi,
     data: log.data,
-    topics: [...log.topics] as [Hex, ...Hex[]],
+    topics: log.topics as unknown as [Hex, ...Hex[]],
     strict: true,
   });
   const args = decoded.args as Record<string, unknown>;
@@ -69,14 +69,14 @@ export function decodePayChadEvent(log: RawBlockchainLog): PayChadDomainEvent {
   };
 
   switch (decoded.eventName) {
-    case "CompanyRegistered": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), owner: asAddress(args.owner, "owner"), name: asString(args.name, "name") };
-    case "EmployeeAdded": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), wallet: asAddress(args.wallet, "wallet"), salary: asPositiveBigInt(args.salary, "salary") };
-    case "EmployeeStatusChanged": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), active: asBoolean(args.active, "active") };
-    case "PayrollFunded": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), funder: asAddress(args.funder, "funder"), amount: asPositiveBigInt(args.amount, "amount") };
-    case "PayrollRunCreated": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId") };
-    case "PayrollPayment": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), recipient: asAddress(args.recipient, "recipient"), amount: asPositiveBigInt(args.amount, "amount") };
-    case "PayrollRunCompleted": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId"), totalPaid: asPositiveBigInt(args.totalPaid, "totalPaid"), employeeCount: asPositiveBigInt(args.employeeCount, "employeeCount") };
-    case "PayrollWithdrawn": return { ...base, kind: decoded.eventName, companyId: asBigInt(args.companyId, "companyId"), recipient: asAddress(args.recipient, "recipient"), amount: asPositiveBigInt(args.amount, "amount") };
+    case "CompanyRegistered": return { ...base, kind: "CompanyRegistered", companyId: asBigInt(args.companyId, "companyId"), owner: asAddress(args.owner, "owner"), name: asString(args.name, "name") };
+    case "EmployeeAdded": return { ...base, kind: "EmployeeAdded", companyId: asBigInt(args.companyId, "companyId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), wallet: asAddress(args.wallet, "wallet"), salary: asPositiveBigInt(args.salary, "salary") };
+    case "EmployeeStatusChanged": return { ...base, kind: "EmployeeStatusChanged", companyId: asBigInt(args.companyId, "companyId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), active: asBoolean(args.active, "active") };
+    case "PayrollFunded": return { ...base, kind: "PayrollFunded", companyId: asBigInt(args.companyId, "companyId"), funder: asAddress(args.funder, "funder"), amount: asPositiveBigInt(args.amount, "amount") };
+    case "PayrollRunCreated": return { ...base, kind: "PayrollRunCreated", companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId") };
+    case "PayrollPayment": return { ...base, kind: "PayrollPayment", companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId"), employeeId: asPositiveBigInt(args.employeeId, "employeeId"), recipient: asAddress(args.recipient, "recipient"), amount: asPositiveBigInt(args.amount, "amount") };
+    case "PayrollRunCompleted": return { ...base, kind: "PayrollRunCompleted", companyId: asBigInt(args.companyId, "companyId"), runId: asPositiveBigInt(args.runId, "runId"), totalPaid: asPositiveBigInt(args.totalPaid, "totalPaid"), employeeCount: asPositiveBigInt(args.employeeCount, "employeeCount") };
+    case "PayrollWithdrawn": return { ...base, kind: "PayrollWithdrawn", companyId: asBigInt(args.companyId, "companyId"), recipient: asAddress(args.recipient, "recipient"), amount: asPositiveBigInt(args.amount, "amount") };
     default: throw new Error(`Unsupported PayChadPayroll event: ${String(decoded.eventName)}`);
   }
 }
