@@ -27,7 +27,6 @@ function completedEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("Pa
 function withdrawnEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollWithdrawn", [1n, OWNER], [{ type: "uint256" }], [750000000n], logIndex); }
 
 const TEST_EVENTS = [companyEvent(), employeeEvent(1n), statusEvent(false, 2n), fundedEvent(3n), runCreatedEvent(4n), paymentEvent(5n), completedEvent(6n), withdrawnEvent(7n)];
-
 function expectEvent(log: RawBlockchainLog, expected: Partial<PayChadDomainEvent>) { expect(decodePayChadEvent(log)).toMatchObject(expected); }
 
 describe("PayChad event decoder", () => {
@@ -70,7 +69,7 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
   it("maps all eight events and replays every event idempotently", async () => {
     const events = TEST_EVENTS.map((log) => decodePayChadEvent(log));
     await persistPayChadEvents(db, events);
-    for (const event of events) expect(await db.begin(async (tx) => persistPayChadEvent(tx as unknown as Database, event))).toBe("replayed");
+    for (const event of events) expect(await persistPayChadEvent(db, event)).toBe("replayed");
 
     const [{ count: eventCount }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID}`;
     const [{ count: companyCount }] = await db<{ count: string }[]>`SELECT count(*) FROM companies WHERE chain_id = ${CHAIN_ID}`;
@@ -98,14 +97,14 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
 
   it("rolls back the indexed event when a prerequisite projection fails", async () => {
     const invalid = decodePayChadEvent(statusEvent(true, 30n));
-    await expect(db.begin(async (tx) => persistPayChadEvent(tx as unknown as Database, invalid))).rejects.toThrow("prerequisite employee");
+    await expect(persistPayChadEvent(db, invalid)).rejects.toThrow("prerequisite employee");
     const [{ count }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 30`;
     expect(count).toBe("0");
   });
 
   it("fails closed for out-of-order payroll payment prerequisites", async () => {
     const payment = decodePayChadEvent(paymentEvent(40n));
-    await expect(db.begin(async (tx) => persistPayChadEvent(tx as unknown as Database, payment))).rejects.toThrow();
+    await expect(persistPayChadEvent(db, payment)).rejects.toThrow();
     const [{ count }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 40`;
     expect(count).toBe("0");
   });
