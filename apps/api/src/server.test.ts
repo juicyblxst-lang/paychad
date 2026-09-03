@@ -8,9 +8,15 @@ describe("PayChad API", () => {
     await app.close();
   });
 
-  it("reports healthy", async () => {
+  it("reports liveness without a database", async () => {
     const response = await app.inject({ method: "GET", url: "/health" });
     expect(response.statusCode).toBe(200);
-    expect(response.json()).toEqual({ service: "paychad-api", status: "ok" });
+    expect(response.json()).toEqual({ service: "paychad-api", status: "degraded" });
+  });
+
+  it("reports database readiness as unavailable when database is not configured", async () => {
+    const response = await app.inject({ method: "GET", url: "/ready" });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ service: "paychad-api", status: "not_ready", code: "CONFIGURATION_ERROR" });
   });
 });
