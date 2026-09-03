@@ -4,6 +4,18 @@ import type { PayChadDomainEvent } from "./events";
 export type PersistResult = "inserted" | "replayed";
 
 export async function persistPayChadEvent(db: Database, event: PayChadDomainEvent): Promise<PersistResult> {
+  return db.begin(async (transaction) => persistPayChadEventInTransaction(transaction as unknown as Database, event));
+}
+
+export async function persistPayChadEvents(db: Database, events: readonly PayChadDomainEvent[]): Promise<void> {
+  const ordered = [...events].sort(compareEventOrder);
+  await db.begin(async (transaction) => {
+    const tx = transaction as unknown as Database;
+    for (const event of ordered) await persistPayChadEventInTransaction(tx, event);
+  });
+}
+
+async function persistPayChadEventInTransaction(db: Database, event: PayChadDomainEvent): Promise<PersistResult> {
   if (!event.blockHash) throw new Error("Block hash is required for persistence");
   if (event.transactionIndex == null) throw new Error("Transaction index is required for persistence");
 
@@ -52,7 +64,7 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
       existing.block_hash.toLowerCase() !== event.blockHash.toLowerCase()
       || existing.contract_address.toLowerCase() !== event.contractAddress.toLowerCase()
       || existing.event_name !== event.kind
-      || JSON.stringify(existing.event_data) !== JSON.stringify(eventData)
+      || canonicalJson(existing.event_data) !== canonicalJson(eventData)
     ) {
       throw new Error("Conflicting event data for an existing blockchain event identity");
     }
@@ -132,14 +144,6 @@ export async function persistPayChadEvent(db: Database, event: PayChadDomainEven
   return "inserted";
 }
 
-export async function persistPayChadEvents(db: Database, events: readonly PayChadDomainEvent[]): Promise<void> {
-  const ordered = [...events].sort(compareEventOrder);
-  await db.begin(async (transaction) => {
-    const tx = transaction as unknown as Database;
-    for (const event of ordered) await persistPayChadEvent(tx, event);
-  });
-}
-
 function compareEventOrder(a: PayChadDomainEvent, b: PayChadDomainEvent): number {
   if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
   const aTx = a.transactionIndex ?? Number.MAX_SAFE_INTEGER;
@@ -171,4 +175,12 @@ function stringifyBigInts(value: unknown): unknown {
     return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, stringifyBigInts(item)]));
   }
   return value;
+}
+
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value as Record<string, unknown>).sort().map((key) => `${JSON.stringify(key)}:${canonicalJson((value as Record<string, unknown>)[key])}`).join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
