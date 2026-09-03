@@ -18,11 +18,11 @@ The historical record is substantially larger than the latest red CI line sugges
 - Temporary `Refresh Lockfile` successes: **2**.
 - Pull requests/alternate branches currently present: **none**; only `main` exists.
 
-The 86 failed workflow runs are **occurrences, not 86 independent bugs**. The history clusters into a much smaller set of underlying causes. The audit identifies **22 historical root-cause families** with high confidence, plus several current latent risks discovered by code inspection.
+The 86 failed workflow runs are **occurrences, not 86 independent bugs**. The history clusters into a much smaller set of underlying causes. The audit identifies **23 root-cause families** with high confidence, plus several current latent risks discovered by code inspection.
 
 The most important pattern is a transition from repository/bootstrap failures, through frontend/API/contract integration failures, into Phase 1 PostgreSQL failures, and finally a dense Phase 2A indexer/type/persistence failure cluster. The latter contains many consecutive manifestations of a small number of type-boundary and PostgreSQL serialization issues.
 
-The latest known failure is not evidence that all of Phase 2A is broken: the current failure is a TypeScript JSON-value typing boundary in `persist.ts`. However, Phase 2A has not yet reached a clean full-CI validation after the latest fixes.
+The latest known failure is not evidence that all of Phase 2A is broken: the current failure is a TypeScript JSON-value typing boundary in `persist.ts`. More importantly, current code inspection uncovered a concrete contract/schema semantic mismatch: `executePayroll` can emit multiple `PayrollRunCompleted` events for the same run, while the Phase 1 projection currently models only one completion. That must be fixed before production indexing.
 
 ## 2. Root Cause Table
 
@@ -42,14 +42,15 @@ The latest known failure is not evidence that all of Phase 2A is broken: the cur
 | ROOT-12 | DB/test | Schema validation tests mishandled PostgreSQL transaction-abort behavior after expected constraint errors | initial schema validation | `a882aa7` | multiple | RESOLVED | Negative cases use independent transactions; unexpected errors now fail validation |
 | ROOT-13 | DB/test | Schema-validation row lookups/transaction result typing were insufficiently guarded | `f1a807e` | `410a245` | multiple | RESOLVED | Result access and transaction typing were hardened |
 | ROOT-14 | DB/schema | Event history initially did not retain complete decoded event payloads needed for funding/withdrawal observability | Phase 1 schema validation | `d53d390` | several | RESOLVED | `indexed_events.event_data JSONB NOT NULL` now stores decoded payloads |
-| ROOT-15 | INDEXER/VIEM | The decoder's ABI/event typing was unstable at the viem boundary | Phase 2A start | `66d0607` / later | many | OPEN/REGRESSED | Multiple fixes improved typing, but current branch still has a downstream JSON-value type failure |
+| ROOT-15 | INDEXER/VIEM | The decoder's ABI/event typing was unstable at the viem boundary | Phase 2A start | current | many | OPEN | Multiple fixes improved typing, but current branch still has a downstream JSON-value type failure |
 | ROOT-16 | INDEXER | Decoder initially did not pass a complete RPC log metadata shape into viem | Phase 2A start | `ac28ccc` | repeated | RESOLVED | Full log metadata is now supplied; tests cover optional metadata |
-| ROOT-17 | DB/INDEXER | PostgreSQL bigint parameter handling was incompatible with exact blockchain integer usage | Phase 2A | `f7796fa` / `f33446b` | multiple | OPEN/REGRESSED | Scalars are now passed as strings in tests, but the broader signed-BIGINT schema issue remains |
+| ROOT-17 | DB/INDEXER | PostgreSQL bigint parameter handling was incompatible with exact blockchain integer usage | Phase 2A | current | multiple | OPEN | Scalars are now passed as strings in tests, but the signed-BIGINT schema mismatch remains |
 | ROOT-18 | DB/INDEXER | `blockchain_transactions` must exist before `indexed_events` because of the event FK | Phase 2A | `67c0440` | repeated | RESOLVED | Persistence now inserts/ensures transaction identity first |
-| ROOT-19 | INDEXER | Replay/duplicate event handling needed concurrency-safe atomic behavior | Phase 2A | `758f5b2` | multiple | PARTIALLY RESOLVED | Atomic single-event persistence and canonical event identity exist; current tests still need final green validation |
-| ROOT-20 | INDEXER/DB | JSONB event payload serialization and replay equality had type/representation mismatches | Phase 2A | `8e7e298` through `f5fd5b2` | multiple | OPEN | Native JSONB serialization and exact-string amount assertions were added; latest CI still reports JSONValue typing |
+| ROOT-19 | INDEXER | Replay/duplicate event handling needed concurrency-safe atomic behavior | Phase 2A | current | multiple | PARTIALLY RESOLVED | Atomic persistence and canonical event identity exist; final full-CI validation remains outstanding |
+| ROOT-20 | INDEXER/DB | JSONB event payload serialization and replay equality had type/representation mismatches | Phase 2A | current | multiple | OPEN | Native JSONB serialization and exact-string amount assertions were added; latest CI still reports JSONValue typing |
 | ROOT-21 | CI/INDEXER | CI started indexer integration tests before ensuring the schema migration had run | Phase 2A | `67bc838` | repeated | RESOLVED | CI now migrates before API tests and validates a second migration run |
-| ROOT-22 | INDEXER/test | Integration tests themselves introduced generic-query typing and bigint-parameter issues while attempting to prove exact persistence | Phase 2A | `f33446b` / `f5fd5b2` | multiple | OPEN | Latest run still failed in TypeScript before test execution; current work must finish this boundary cleanly |
+| ROOT-22 | INDEXER/test | Integration tests introduced generic-query typing and bigint-parameter issues while proving exact persistence | Phase 2A | current | multiple | OPEN | Latest run still fails in TypeScript before test execution |
+| ROOT-23 | CONTRACT/DB | `executePayroll` may emit multiple `PayrollRunCompleted` events for one run, but the Phase 1 `payroll_runs` projection treats completion as a single overwriteable record | contract inspection | current | latent | OPEN / P1 | Current contract source permits partial/disjoint execution of the same run; projection must aggregate completion observations rather than overwrite them |
 
 ## 3. CI Run Timeline
 
@@ -103,6 +104,10 @@ The decoder went through several iterations because viem's generic ABI inference
 
 The current dense failure cluster is primarily one representation problem expressed in several locations: blockchain `uint256` values are `bigint`, PostgreSQL numeric/bigint values are string-oriented, and JSONB accepts a narrower JSON value type. Fixes that merely cast the TypeScript type can mask the boundary rather than establish a durable representation contract.
 
+### Cluster F — Payroll completion semantics
+
+The current contract's `executePayroll` loops over the supplied employee IDs and emits one `PayrollPayment` per employee, then emits a `PayrollRunCompleted` event for that execution call. Because the contract allows another call with the same run ID for other employees, the same `(companyId, runId)` can legitimately have more than one completion event. A projection that overwrites `total_paid` and `employee_count` on each completion can therefore undercount the run and lose prior completion observations.
+
 ## 5. Regressions
 
 ### Confirmed regression-like patterns
@@ -127,11 +132,15 @@ A second identical class of error occurs at line 59. This is a real type-contrac
 
 ### OPEN-02 — Phase 2A has not received a post-fix green full-CI validation
 
-The latest corrective commit `f5fd5b2` has a new CI run in progress/failed during the audit window. Until a clean run completes, Phase 2A cannot be declared complete.
+The latest corrective commit `f5fd5b2` has a failed CI run during the audit window. Until a clean run completes, Phase 2A cannot be declared complete.
 
 ### OPEN-03 — Phase 1 schema uses signed BIGINT for contract-derived employee/run identifiers
 
-The contract emits `employeeId` and `runId` as `uint256`, while the underlying counters are `uint64`. PostgreSQL signed `BIGINT` tops out at `2^63-1`, while `uint64` can reach `2^64-1`. Therefore `employees.employee_id`, `payroll_runs.run_id`, and `payroll_runs.employee_count` are narrower than the contract's declared numeric domain. This is currently latent because realistic counts are far smaller, but it is a source-of-truth mismatch and should be corrected with a forward migration before production indexing.
+The contract emits `employeeId` and `runId` as `uint256`, while the underlying counters are `uint64`. PostgreSQL signed `BIGINT` tops out at `2^63-1`, while `uint64` can reach `2^64-1`. Therefore `employees.employee_id`, `payroll_runs.run_id`, `payroll_runs.employee_count`, and the corresponding payment foreign-key columns are narrower than the contract's declared numeric domain. This is currently latent because realistic counts are far smaller, but it is a source-of-truth mismatch and should be corrected with a forward migration before production indexing.
+
+### OPEN-04 — PayrollRunCompleted projection can lose valid completion history
+
+The contract permits multiple `executePayroll(companyId, runId, ids)` calls for the same run when they contain different employees. Each call emits a `PayrollRunCompleted` event. The current projection overwrites `payroll_runs.total_paid_base_units` and `employee_count` instead of accumulating the per-execution observations. This is a concrete financial-reporting correctness bug in the projection layer, even though Monad remains the financial authority.
 
 ## 7. Latent Risks
 
@@ -191,6 +200,8 @@ The connected Vercel team was inspected. There is currently no PayChad Vercel pr
 
 Current contract behavior has several positive properties: owner checks, non-reentrancy around token movement, explicit duplicate-payment protection through `lastPaidRun`, exact `uint256` amounts, and event emission for funding/payment/withdrawal. Recent contract CI is green.
 
+The important projection-level finding is that `PayrollRunCompleted` is **not a unique final-run event** under the current contract. It is emitted after each execution call. Any off-chain consumer must therefore treat it as an execution summary and aggregate multiple observations for the same run. Monad remains the financial authority.
+
 ### Database/indexer
 
 The highest financial correctness risk is not the database creating money; it is the indexer producing an incorrect projection that operators might mistake for chain truth. The current architecture correctly avoids an off-chain payroll balance ledger.
@@ -227,32 +238,34 @@ The frontend uses viem `bigint` for on-chain amounts and `parseUnits` for USDC v
 
 - Phase 2A replay/concurrency behavior has not yet been followed by a clean full-CI run after the final typing changes.
 - Out-of-order recovery is explicitly fail-closed, but the future worker's retry/replay strategy is not yet implemented.
+- Payroll completion aggregation has not yet been corrected or regression-tested.
 
 ## 11. Recommended Fix Order
 
 ### P0 — Financial/security/data correctness
 
-1. Establish one exact integer representation contract across Solidity → viem → domain → PostgreSQL.
-2. Correct the employee/run/count schema width mismatch with a forward migration before production indexing.
-3. Add event-position metadata/monotonicity rules for mutable projections before concurrent production indexing.
+1. Treat `PayrollRunCompleted` as a per-execution event and aggregate its totals/counts exactly once per event identity.
+2. Establish one exact integer representation contract across Solidity → viem → domain → PostgreSQL.
+3. Correct the employee/run/count schema width mismatch with a forward migration before production indexing.
+4. Add event-position metadata/monotonicity rules for mutable projections before concurrent production indexing.
 
 ### P1 — Core product correctness
 
-4. Finish the Phase 2A JSON-domain typing boundary without unsafe casts.
-5. Complete and green all Phase 2A decoder/persistence/replay/rollback/out-of-order tests.
-6. Remove ABI drift risk by establishing a single authoritative ABI source for web/indexer consumers.
-7. Make frontend payroll-run identification event-derived rather than precomputed.
+5. Finish the Phase 2A JSON-domain typing boundary without unsafe casts.
+6. Complete and green all Phase 2A decoder/persistence/replay/rollback/out-of-order tests.
+7. Remove ABI drift risk by establishing a single authoritative ABI source for web/indexer consumers.
+8. Make frontend payroll-run identification event-derived rather than precomputed.
 
 ### P2 — CI/deployment reliability
 
-8. Obtain a clean full CI run after Phase 2A fixes.
-9. Add explicit Render health-check configuration only when the service is otherwise validated; do not mutate Render during this audit.
-10. Provision a dedicated PayChad Postgres only after choosing a valid Render plan and explicit infrastructure approval.
+9. Obtain a clean full CI run after Phase 2A fixes.
+10. Add explicit Render health-check configuration only when the service is otherwise validated; do not mutate Render during this audit.
+11. Provision a dedicated PayChad Postgres only after choosing a valid Render plan and explicit infrastructure approval.
 
 ### P3 — Developer experience / quality
 
-11. Add richer domain-level test fixtures and clearer failure diagnostics.
-12. Add a machine-readable audit/census process to CI history tooling if long-lived development continues.
+12. Add richer domain-level test fixtures and clearer failure diagnostics.
+13. Add a machine-readable audit/census process to CI history tooling if long-lived development continues.
 
 ## 12. Areas Not Yet Properly Validated
 
@@ -275,6 +288,6 @@ The root-cause grouping is therefore evidence-based and conservative: repeated f
 
 **PayChad is not yet healthy enough to declare Phase 2A complete.**
 
-The repository has a substantially healthier foundation than the raw failure count suggests, and Phase 1 reached a verified green milestone. The current problem is concentrated: Phase 2A's decoder/persistence boundary still has unresolved TypeScript/JSON-domain issues, and the Phase 1 schema has a latent width mismatch for `uint64`-backed identifiers.
+The repository has a substantially healthier foundation than the raw failure count suggests, and Phase 1 reached a verified green milestone. The current Phase 2A failures are concentrated, but there is also a concrete projection semantic bug around repeated `PayrollRunCompleted` events and a latent schema width mismatch.
 
-The correct next move is **not** another isolated red-line fix. It is to finish the integer/JSON representation contract, correct the schema width mismatch, add regression coverage for the latent ordering/concurrency cases, then run a clean full CI and re-audit the resulting history.
+The correct next move is to fix the projection semantics and exact integer/JSON representation contracts, add regression coverage, then run a clean full CI and re-audit the resulting history. No Render or production database mutation is part of this remediation step.
