@@ -52,8 +52,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @paychad/api typecheck
       - run: pnpm --filter @paychad/api build
-      - run: pnpm --filter @paychad/api test
       - run: pnpm --filter @paychad/api db:migrate
+      - run: pnpm --filter @paychad/api test
       - run: pnpm --filter @paychad/api db:migrate
       - run: pnpm --filter @paychad/api db:validate
 
