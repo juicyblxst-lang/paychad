@@ -1,15 +1,15 @@
-import { decodeEventLog, type Address, type Hex } from "viem";
+import { decodeEventLog, parseAbi, type Address, type Hex } from "viem";
 
-export const payChadPayrollEvents = [
-  { type: "event", name: "CompanyRegistered", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "owner", type: "address" }, { indexed: false, name: "name", type: "string" }] },
-  { type: "event", name: "EmployeeAdded", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "employeeId", type: "uint256" }, { indexed: true, name: "wallet", type: "address" }, { indexed: false, name: "salary", type: "uint256" }] },
-  { type: "event", name: "EmployeeStatusChanged", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "employeeId", type: "uint256" }, { indexed: false, name: "active", type: "bool" }] },
-  { type: "event", name: "PayrollFunded", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "funder", type: "address" }, { indexed: false, name: "amount", type: "uint256" }] },
-  { type: "event", name: "PayrollRunCreated", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "runId", type: "uint256" }] },
-  { type: "event", name: "PayrollPayment", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "runId", type: "uint256" }, { indexed: true, name: "employeeId", type: "uint256" }, { indexed: false, name: "recipient", type: "address" }, { indexed: false, name: "amount", type: "uint256" }] },
-  { type: "event", name: "PayrollRunCompleted", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "runId", type: "uint256" }, { indexed: false, name: "totalPaid", type: "uint256" }, { indexed: false, name: "employeeCount", type: "uint256" }] },
-  { type: "event", name: "PayrollWithdrawn", inputs: [{ indexed: true, name: "companyId", type: "uint256" }, { indexed: true, name: "recipient", type: "address" }, { indexed: false, name: "amount", type: "uint256" }] },
-] as const;
+export const payChadPayrollEvents = parseAbi([
+  "event CompanyRegistered(uint256 indexed companyId, address indexed owner, string name)",
+  "event EmployeeAdded(uint256 indexed companyId, uint256 indexed employeeId, address indexed wallet, uint256 salary)",
+  "event EmployeeStatusChanged(uint256 indexed companyId, uint256 indexed employeeId, bool active)",
+  "event PayrollFunded(uint256 indexed companyId, address indexed funder, uint256 amount)",
+  "event PayrollRunCreated(uint256 indexed companyId, uint256 indexed runId)",
+  "event PayrollPayment(uint256 indexed companyId, uint256 indexed runId, uint256 indexed employeeId, address recipient, uint256 amount)",
+  "event PayrollRunCompleted(uint256 indexed companyId, uint256 indexed runId, uint256 totalPaid, uint256 employeeCount)",
+  "event PayrollWithdrawn(uint256 indexed companyId, address indexed recipient, uint256 amount)",
+]);
 
 type RawBlockchainLog = {
   chainId: bigint;
@@ -48,9 +48,15 @@ export function decodePayChadEvent(log: RawBlockchainLog): PayChadDomainEvent {
   if (log.chainId <= 0n) throw new Error("Invalid chain ID");
   if (log.blockNumber < 0n) throw new Error("Invalid block number");
   if (BigInt(log.logIndex) < 0n) throw new Error("Invalid log index");
-  if (!log.transactionHash || !log.address) throw new Error("Incomplete blockchain log identity");
+  if (!/^0x[0-9a-fA-F]{64}$/.test(log.transactionHash)) throw new Error("Invalid transaction hash");
+  if (!/^0x[0-9a-fA-F]{40}$/.test(log.address)) throw new Error("Invalid contract address");
 
-  const decoded = decodeEventLog({ abi: payChadPayrollEvents, data: log.data, topics: log.topics });
+  const decoded = decodeEventLog({
+    abi: payChadPayrollEvents,
+    data: log.data,
+    topics: [...log.topics] as [Hex, ...Hex[]],
+    strict: true,
+  });
   const args = decoded.args as Record<string, unknown>;
   const base: BaseDomainEvent = {
     chainId: log.chainId,
