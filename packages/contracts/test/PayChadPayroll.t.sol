@@ -69,8 +69,8 @@ contract PayChadPayrollTest {
         ids[0] = 1;
         payroll.executePayroll(companyId, runId, ids);
         require(token.balanceOf(employee) == 250e6, "employee unpaid");
-        (,,,, uint256 remaining) = payroll.getCompany(companyId);
-        require(remaining == 0, "balance remains");
+        PayChadPayroll.Company memory company = payroll.getCompany(companyId);
+        require(company.payrollBalance == 0, "balance remains");
     }
 
     function testDuplicateEmployeeInSameRunReverts() public {
