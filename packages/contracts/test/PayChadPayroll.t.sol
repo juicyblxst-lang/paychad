@@ -43,6 +43,7 @@ contract PayChadPayrollTest {
     MockUSDC internal token;
     PayChadPayroll internal payroll;
     address internal employee = address(0xBEEF);
+    address internal employeeTwo = address(0xCAFE);
 
     function setUp() public {
         token = new MockUSDC();
@@ -69,6 +70,28 @@ contract PayChadPayrollTest {
         ids[0] = 1;
         payroll.executePayroll(companyId, runId, ids);
         require(token.balanceOf(employee) == 250e6, "employee unpaid");
+        PayChadPayroll.Company memory company = payroll.getCompany(companyId);
+        require(company.payrollBalance == 0, "balance remains");
+    }
+
+    function testOneRunCanExecuteMultipleBatches() public {
+        uint256 companyId = payroll.registerCompany("PayChad Demo");
+        payroll.addEmployee(companyId, employee, 100e6);
+        payroll.addEmployee(companyId, employeeTwo, 150e6);
+        token.approve(address(payroll), 250e6);
+        payroll.fundPayroll(companyId, 250e6);
+        uint256 runId = payroll.createPayrollRun(companyId);
+
+        uint256[] memory firstBatch = new uint256[](1);
+        firstBatch[0] = 1;
+        payroll.executePayroll(companyId, runId, firstBatch);
+
+        uint256[] memory secondBatch = new uint256[](1);
+        secondBatch[0] = 2;
+        payroll.executePayroll(companyId, runId, secondBatch);
+
+        require(token.balanceOf(employee) == 100e6, "first employee unpaid");
+        require(token.balanceOf(employeeTwo) == 150e6, "second employee unpaid");
         PayChadPayroll.Company memory company = payroll.getCompany(companyId);
         require(company.payrollBalance == 0, "balance remains");
     }
