@@ -12,18 +12,18 @@ const TX = `0x${"44".repeat(32)}` as Hex;
 const BLOCK_HASH = `0x${"55".repeat(32)}` as Hex;
 const PAYMENT_TX = `0x${"66".repeat(32)}` as Hex;
 
-function encodedLog<T extends (typeof payChadPayrollEvents)[number]["name"]>(eventName: T, args: readonly unknown[], nonIndexed: readonly AbiParameter[], values: readonly unknown[], logIndex = 0n, transactionHash: Hex = TX): RawBlockchainLog {
+function encodedLog<T extends (typeof payChadPayrollEvents)[number]["name"]>(eventName: T, args: readonly unknown[], nonIndexed: readonly AbiParameter[], values: readonly unknown[], logIndex = 0n, transactionHash: Hex = TX, transactionIndex = 0): RawBlockchainLog {
   const topics = encodeEventTopics({ abi: payChadPayrollEvents, eventName, args: args as never });
   const data = nonIndexed.length === 0 ? "0x" : encodeAbiParameters(nonIndexed, values as never);
-  return { chainId: CHAIN_ID, blockNumber: 100n, blockHash: BLOCK_HASH, transactionHash, transactionIndex: 0, logIndex, address: CONTRACT, topics: topics as readonly Hex[], data };
+  return { chainId: CHAIN_ID, blockNumber: 100n, blockHash: BLOCK_HASH, transactionHash, transactionIndex, logIndex, address: CONTRACT, topics: topics as readonly Hex[], data };
 }
 function companyEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("CompanyRegistered", [1n, OWNER], [{ type: "string" }], ["PayChad"], logIndex); }
 function employeeEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("EmployeeAdded", [1n, 1n, EMPLOYEE], [{ type: "uint256" }], [250000000n], logIndex); }
 function statusEvent(active: boolean, logIndex = 0n): RawBlockchainLog { return encodedLog("EmployeeStatusChanged", [1n, 1n], [{ type: "bool" }], [active], logIndex); }
 function fundedEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollFunded", [1n, OWNER], [{ type: "uint256" }], [1000000000n], logIndex); }
 function runCreatedEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollRunCreated", [1n, 1n], [], [], logIndex); }
-function paymentEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollPayment", [1n, 1n, 1n], [{ type: "address" }, { type: "uint256" }], [EMPLOYEE, 250000000n], logIndex, PAYMENT_TX); }
-function completedEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollRunCompleted", [1n, 1n], [{ type: "uint256" }, { type: "uint256" }], [250000000n, 1n], logIndex, PAYMENT_TX); }
+function paymentEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollPayment", [1n, 1n, 1n], [{ type: "address" }, { type: "uint256" }], [EMPLOYEE, 250000000n], logIndex, PAYMENT_TX, 1); }
+function completedEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollRunCompleted", [1n, 1n], [{ type: "uint256" }, { type: "uint256" }], [250000000n, 1n], logIndex, PAYMENT_TX, 1); }
 function withdrawnEvent(logIndex = 0n): RawBlockchainLog { return encodedLog("PayrollWithdrawn", [1n, OWNER], [{ type: "uint256" }], [750000000n], logIndex); }
 
 const TEST_EVENTS = [companyEvent(), employeeEvent(1n), statusEvent(false, 2n), fundedEvent(3n), runCreatedEvent(4n), paymentEvent(5n), completedEvent(6n), withdrawnEvent(7n)];
@@ -71,16 +71,16 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
     await persistPayChadEvents(db, events);
     for (const event of events) expect(await persistPayChadEvent(db, event)).toBe("replayed");
 
-    const [{ count: eventCount }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: companyCount }] = await db<{ count: string }[]>`SELECT count(*) FROM companies WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: employeeCount }] = await db<{ count: string }[]>`SELECT count(*) FROM employees WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: runCount }] = await db<{ count: string }[]>`SELECT count(*) FROM payroll_runs WHERE chain_id = ${CHAIN_ID}`;
-    const [{ count: paymentCount }] = await db<{ count: string }[]>`SELECT count(*) FROM payroll_payments WHERE chain_id = ${CHAIN_ID}`;
-    expect(eventCount).toBe("8");
-    expect(companyCount).toBe("1");
-    expect(employeeCount).toBe("1");
-    expect(runCount).toBe("1");
-    expect(paymentCount).toBe("1");
+    const [{ count: eventCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID}`;
+    const [{ count: companyCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM companies WHERE chain_id = ${CHAIN_ID}`;
+    const [{ count: employeeCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM employees WHERE chain_id = ${CHAIN_ID}`;
+    const [{ count: runCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM payroll_runs WHERE chain_id = ${CHAIN_ID}`;
+    const [{ count: paymentCount }] = await db<{ count: bigint }[]>`SELECT count(*) FROM payroll_payments WHERE chain_id = ${CHAIN_ID}`;
+    expect(eventCount).toBe(8n);
+    expect(companyCount).toBe(1n);
+    expect(employeeCount).toBe(1n);
+    expect(runCount).toBe(1n);
+    expect(paymentCount).toBe(1n);
 
     const [payment] = await db<{ amount: string }[]>`SELECT amount_base_units::text AS amount FROM payroll_payments WHERE chain_id = ${CHAIN_ID}`;
     expect(payment?.amount).toBe("250000000");
@@ -91,21 +91,21 @@ describe.skipIf(!process.env.DATABASE_URL)("PayChad event persistence", () => {
   it("handles multiple logs from one transaction without collision", async () => {
     const events = [decodePayChadEvent(companyEvent(20n)), decodePayChadEvent(employeeEvent(21n))];
     await persistPayChadEvents(db, events);
-    const [{ count }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND transaction_hash = ${TX}`;
-    expect(count).toBe("2");
+    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND transaction_hash = ${TX}`;
+    expect(count).toBe(2n);
   });
 
   it("rolls back the indexed event when a prerequisite projection fails", async () => {
     const invalid = decodePayChadEvent(statusEvent(true, 30n));
     await expect(persistPayChadEvent(db, invalid)).rejects.toThrow("prerequisite employee");
-    const [{ count }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 30`;
-    expect(count).toBe("0");
+    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 30`;
+    expect(count).toBe(0n);
   });
 
   it("fails closed for out-of-order payroll payment prerequisites", async () => {
     const payment = decodePayChadEvent(paymentEvent(40n));
     await expect(persistPayChadEvent(db, payment)).rejects.toThrow();
-    const [{ count }] = await db<{ count: string }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 40`;
-    expect(count).toBe("0");
+    const [{ count }] = await db<{ count: bigint }[]>`SELECT count(*) FROM indexed_events WHERE chain_id = ${CHAIN_ID} AND log_index = 40`;
+    expect(count).toBe(0n);
   });
 });
