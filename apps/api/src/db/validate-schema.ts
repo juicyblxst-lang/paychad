@@ -121,7 +121,7 @@ export async function validateSchema(): Promise<void> {
         FROM employees
         WHERE chain_id = 143 AND company_id = 1 AND employee_id = 1
       `;
-      if (salary.salary_base_units !== MAX_UINT256) {
+      if (!salary || salary.salary_base_units !== MAX_UINT256) {
         throw new Error("Exact uint256-sized monetary value was not preserved");
       }
 
