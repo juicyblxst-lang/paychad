@@ -81,7 +81,8 @@ contract PayChadPayroll {
         if (companyIdByOwner[msg.sender] != 0) revert CompanyAlreadyExists();
         companyId = nextCompanyId++;
         companyIdByOwner[msg.sender] = companyId;
-        companies[companyId] = Company({owner: msg.sender, name: name, employeeCount: 0, nextRunId: 1, payrollBalance: 0});
+        companies[companyId] =
+            Company({owner: msg.sender, name: name, employeeCount: 0, nextRunId: 1, payrollBalance: 0});
         emit CompanyRegistered(companyId, msg.sender, name);
     }
 
