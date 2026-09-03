@@ -114,8 +114,9 @@ describe("scanner", () => {
 
   it("does not rescan a completed range after restart", async () => {
     const rpc = new FakeRpc();
+    rpc.latest = 19n;
     rpc.logs = [companyLog(12n)];
-    const persister = new FakePersister();
+    const persister = new IdempotentPersister();
     const checkpoints = new FakeCheckpointStore();
 
     await scanOnce(rpc, persister, checkpoints, config());
@@ -208,6 +209,7 @@ describe("scanner", () => {
 
   it("does not allow a slower concurrent worker to move the checkpoint backwards", async () => {
     const rpc = new FakeRpc();
+    rpc.latest = 39n;
     const checkpoints = new FakeCheckpointStore();
     checkpoints.checkpoint = { chainId: CHAIN_ID, contractAddress: CONTRACT, lastProcessedBlock: 19n, lastProcessedBlockHash: HASH("13") };
     let resolveSlow: () => void = () => {};
@@ -227,6 +229,7 @@ describe("scanner", () => {
 
   it("does not duplicate a range when a completed scan is followed by a worker restart", async () => {
     const rpc = new FakeRpc();
+    rpc.latest = 19n;
     rpc.logs = [companyLog(12n, 0n, 0), companyLog(12n, 1n, 1)];
     const persister = new IdempotentPersister();
     const checkpoints = new FakeCheckpointStore();
