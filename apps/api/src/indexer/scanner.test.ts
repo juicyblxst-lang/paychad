@@ -11,7 +11,7 @@ const TX = (blockNumber: bigint): Hex => `0x${blockNumber.toString(16).padStart(
 
 function companyLog(blockNumber: bigint, logIndex = 0n): RawBlockchainLog {
   return { chainId: CHAIN_ID, blockNumber, blockHash: HASH("a"), transactionHash: TX(blockNumber), transactionIndex: 0, logIndex, address: CONTRACT,
-    topics: encodeEventTopics({ abi: payChadPayrollEvents, eventName: "CompanyRegistered", args: [1n, OWNER] }) as readonly Hex[],
+    topics: encodeEventTopics({ abi: payChadPayrollEvents, eventName: "CompanyRegistered", args: { companyId: 1n, owner: OWNER } }) as readonly Hex[],
     data: encodeAbiParameters([{ type: "string" }], ["PayChad"]) };
 }
 function config(overrides: Partial<ScannerConfig> = {}): ScannerConfig {
@@ -38,8 +38,7 @@ describe("scanner", () => {
     const rpc = new FakeRpc(); rpc.hashes.set(11n, HASH("a")); rpc.hashes.set(12n, HASH("a")); rpc.logs = [companyLog(12n, 1n), companyLog(11n)];
     const persister = new FakePersister(); const checkpoints = new FakeCheckpointStore();
     const result = await scanOnce(rpc, persister, checkpoints, config({ batchSize: 20n }));
-    expect(result).toMatchObject({ fromBlock: 10n, toBlock: 20n, logCount: 2 });
-    expect(persister.events.map((event) => event.blockNumber)).toEqual([11n, 12n]); expect(checkpoints.checkpoint?.lastProcessedBlock).toBe(20n); expect(checkpoints.saves).toBe(1);
+    expect(result).toMatchObject({ fromBlock: 10n, toBlock: 20n, logCount: 2 }); expect(persister.events.map((event) => event.blockNumber)).toEqual([11n, 12n]); expect(checkpoints.checkpoint?.lastProcessedBlock).toBe(20n); expect(checkpoints.saves).toBe(1);
   });
   it("does not advance the checkpoint when persistence fails", async () => {
     const rpc = new FakeRpc(); rpc.hashes.set(12n, HASH("a")); rpc.logs = [companyLog(12n)]; const persister = new FakePersister(); persister.failures = 1; const checkpoints = new FakeCheckpointStore();
